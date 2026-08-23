@@ -21,6 +21,9 @@ import { ProtectTool, UnlockTool, RepairTool } from './components/tools/Security
 import ExcelTool from './components/tools/ExcelTool'
 import RedactTool from './components/tools/RedactTool'
 import OcrTool from './components/tools/OcrTool'
+import PptTool from './components/tools/PptTool'
+import { SplitHalfTool, SplitSizeTool, SplitTextTool, SplitBookmarksTool } from './components/tools/SplitMoreTools'
+import { FlipTool, AnnotationsTool, ResizeTool, GrayscaleTool, RenameTool, BookmarksTool, MixTool, BatesTool } from './components/tools/PageTools'
 import { toolById } from './tools'
 import Header from './components/Header'
 import Toolbar from './components/Toolbar'
@@ -311,9 +314,9 @@ export default function App() {
   const goHome = () => { dispatch({ type: ACT.RESET }); setIntent(null); setView('home') }
 
   const openTool = id => {
-    if (id === 'editor' || id === 'sign') {
+    if (id === 'editor' || id === 'sign' || id === 'forms') {
       dispatch({ type: ACT.RESET })
-      setIntent(id === 'sign' ? 'sign' : null)
+      setIntent(id === 'editor' ? null : id)
       setView('editor')
       return
     }
@@ -322,10 +325,10 @@ export default function App() {
 
   // Fill & Sign is the editor with the signature panel already open.
   useEffect(() => {
-    if (state.phase === 'editor' && intent === 'sign') {
-      dispatch({ type: ACT.PANEL, panel: 'sign' })
-      setIntent(null)
-    }
+    if (state.phase !== 'editor' || !intent) return
+    if (intent === 'sign') dispatch({ type: ACT.PANEL, panel: 'sign' })
+    if (intent === 'forms') dispatch({ type: ACT.SET_TOOL, tool: 'field-text' })
+    setIntent(null)
   }, [state.phase, intent])
 
   const toolScreen = () => {
@@ -357,6 +360,19 @@ export default function App() {
       case 'redact': return <RedactTool tool={tool} onBack={goHome} />
       case 'repair': return <RepairTool tool={tool} onBack={goHome} />
       case 'ocr': return <OcrTool tool={tool} onBack={goHome} />
+      case 'toppt': return <PptTool tool={tool} onBack={goHome} />
+      case 'mix': return <MixTool tool={tool} onBack={goHome} />
+      case 'splithalf': return <SplitHalfTool tool={tool} onBack={goHome} />
+      case 'splitsize': return <SplitSizeTool tool={tool} onBack={goHome} />
+      case 'splittext': return <SplitTextTool tool={tool} onBack={goHome} />
+      case 'splitbookmarks': return <SplitBookmarksTool tool={tool} onBack={goHome} />
+      case 'flip': return <FlipTool tool={tool} onBack={goHome} />
+      case 'annotations': return <AnnotationsTool tool={tool} onBack={goHome} />
+      case 'resize': return <ResizeTool tool={tool} onBack={goHome} />
+      case 'grayscale': return <GrayscaleTool tool={tool} onBack={goHome} />
+      case 'rename': return <RenameTool tool={tool} onBack={goHome} />
+      case 'bookmarks': return <BookmarksTool tool={tool} onBack={goHome} />
+      case 'bates': return <BatesTool tool={tool} onBack={goHome} />
       default: return null
     }
   }

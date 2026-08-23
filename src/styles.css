@@ -779,3 +779,7 @@ input, select { font-family: inherit; color: inherit; }
 .xl-preview { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 16px; }
 .xl-preview table { border-collapse: collapse; font-size: 12px; width: 100%; }
 .xl-preview td { border: 1px solid #eef1ee; padding: 4px 8px; white-space: nowrap; }
+
+.xl-preview tr.picked td { background: var(--green-soft); color: var(--green-dark); font-weight: 600; }
+.xl-preview tr:hover td { background: #f6f8f6; }
+.xl-preview tr.picked:hover td { background: var(--green-soft); }

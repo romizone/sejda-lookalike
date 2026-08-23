@@ -447,3 +447,246 @@ export async function writeMetadata(bytes, meta) {
   set(v => doc.setProducer(v), meta.producer)
   return asBlob(doc)
 }
+
+/* ---------- alternate & mix ---------- */
+
+export async function mixDocuments(items, { reverseOthers = false }) {
+  const { PDFDocument } = await import('pdf-lib')
+  const out = await PDFDocument.create()
+  const sources = []
+  for (const item of items) {
+    const src = await PDFDocument.load(item.bytes, { ignoreEncryption: true })
+    const order = src.getPageIndices()
+    sources.push({ src, order: reverseOthers && sources.length ? order.slice().reverse() : order })
+  }
+  if (sources.length < 2) throw new Error('Pick at least two documents to mix.')
+
+  const longest = Math.max(...sources.map(s => s.order.length))
+  for (let round = 0; round < longest; round++) {
+    for (const s of sources) {
+      const idx = s.order[round]
+      if (idx === undefined) continue
+      const [page] = await out.copyPages(s.src, [idx])
+      out.addPage(page)
+    }
+  }
+  return asBlob(out)
+}
+
+/* ---------- split a two-page scan down the middle ---------- */
+
+export async function splitInHalf(bytes, { direction = 'auto' }) {
+  const { PDFDocument } = await import('pdf-lib')
+  const src = await load(bytes)
+  const out = await PDFDocument.create()
+
+  for (const page of src.getPages()) {
+    const { width, height } = page.getSize()
+    const vertical = direction === 'auto' ? width >= height : direction === 'vertical'
+    const halves = vertical
+      ? [{ left: 0, bottom: 0, right: width / 2, top: height },
+         { left: width / 2, bottom: 0, right: width, top: height }]
+      // Top half first: a page reads downwards.
+      : [{ left: 0, bottom: height / 2, right: width, top: height },
+         { left: 0, bottom: 0, right: width, top: height / 2 }]
+
+    for (const box of halves) {
+      const embedded = await out.embedPage(page, box)
+      const w = box.right - box.left
+      const h = box.top - box.bottom
+      const sheet = out.addPage([w, h])
+      sheet.drawPage(embedded, { x: 0, y: 0, width: w, height: h })
+    }
+  }
+  return asBlob(out)
+}
+
+/* ---------- split until each part fits a size ---------- */
+
+export async function splitBySize(bytes, { limitBytes, baseName }, onProgress) {
+  const { PDFDocument } = await import('pdf-lib')
+  const src = await load(bytes)
+  const count = src.getPageCount()
+  const files = []
+
+  // Building each candidate from scratch matters: removing a page from a
+  // document leaves its objects behind, so a part trimmed that way would still
+  // weigh what it did before.
+  const build = async indices => {
+    const out = await PDFDocument.create()
+    const copied = await out.copyPages(src, indices)
+    copied.forEach(p => out.addPage(p))
+    return new Uint8Array(await out.save({ useObjectStreams: true }))
+  }
+
+  const push = (group, data) => {
+    files.push({
+      name: `${baseName}-${group[0] + 1}-${group[group.length - 1] + 1}.pdf`,
+      data
+    })
+  }
+
+  let group = []
+  let pending = null
+
+  for (let i = 0; i < count; i++) {
+    const data = await build([...group, i])
+    if (data.length > limitBytes && group.length) {
+      push(group, pending)
+      group = [i]
+      pending = await build(group)
+    } else {
+      group.push(i)
+      pending = data
+    }
+    onProgress?.((i + 1) / count)
+  }
+  if (group.length) push(group, pending)
+
+  if (!files.length) throw new Error('Nothing to split.')
+  return files
+}
+
+/* ---------- mirror ---------- */
+
+export async function flipPdf(bytes, { axis = 'horizontal' }) {
+  const { PDFDocument } = await import('pdf-lib')
+  const src = await load(bytes)
+  const out = await PDFDocument.create()
+
+  for (const page of src.getPages()) {
+    const { width, height } = page.getSize()
+    const embedded = await out.embedPage(page)
+    const sheet = out.addPage([width, height])
+    // A negative scale reflects the page; the anchor moves to the far edge so
+    // the reflection lands back on the sheet.
+    if (axis === 'horizontal') {
+      sheet.drawPage(embedded, { x: width, y: 0, xScale: -1, yScale: 1 })
+    } else {
+      sheet.drawPage(embedded, { x: 0, y: height, xScale: 1, yScale: -1 })
+    }
+  }
+  return asBlob(out)
+}
+
+/* ---------- annotations ---------- */
+
+export async function removeAnnotations(bytes, { keepLinks = false, keepFields = true }) {
+  const { PDFName } = await import('pdf-lib')
+  const doc = await load(bytes)
+  let removed = 0
+
+  for (const page of doc.getPages()) {
+    const annots = page.node.Annots()
+    if (!annots) continue
+    const kept = []
+    for (let i = 0; i < annots.size(); i++) {
+      const ref = annots.get(i)
+      let sub = null
+      try { sub = doc.context.lookup(ref)?.get(PDFName.of('Subtype')) } catch { sub = null }
+      const isLink = sub === PDFName.of('Link')
+      const isWidget = sub === PDFName.of('Widget')
+      if ((isLink && keepLinks) || (isWidget && keepFields)) kept.push(ref)
+      else removed++
+    }
+    page.node.set(PDFName.of('Annots'), doc.context.obj(kept))
+  }
+
+  if (!removed) throw new Error('There are no annotations in this document to remove.')
+  return { blob: await asBlob(doc), removed }
+}
+
+/* ---------- bates numbering ---------- */
+
+export async function batesNumber(items, opts, onProgress) {
+  const { rgb } = await import('pdf-lib')
+  const { pickFont } = await import('./textfont')
+  let counter = opts.startAt ?? 1
+  const out = []
+  let done = 0
+
+  for (const item of items) {
+    const doc = await load(item.bytes)
+    const { font, encode } = await pickFont(doc, `${opts.prefix || ''}${opts.suffix || ''}0123456789`)
+    for (const page of doc.getPages()) {
+      const stamp = `${opts.prefix || ''}${String(counter).padStart(opts.digits || 6, '0')}${opts.suffix || ''}`
+      const text = encode(stamp)
+      const size = opts.size || 9
+      const margin = opts.margin ?? 24
+      const { width, height } = page.getSize()
+      const w = font.widthOfTextAtSize(text, size)
+      const top = (opts.position || 'bottom-right').startsWith('top')
+      const y = top ? height - margin - size : margin
+      let x = margin
+      if ((opts.position || '').endsWith('center')) x = (width - w) / 2
+      else if ((opts.position || 'bottom-right').endsWith('right')) x = width - margin - w
+      page.drawText(text, { x, y, size, font, color: rgb(0.1, 0.1, 0.12) })
+      counter++
+    }
+    out.push({ name: item.name, data: new Uint8Array(await doc.save({ useObjectStreams: false })) })
+    onProgress?.(++done / items.length)
+  }
+  return { files: out, last: counter - 1 }
+}
+
+/* ---------- bookmarks ---------- */
+
+export async function addBookmarks(bytes, entries) {
+  const { PDFName, PDFNumber, PDFString } = await import('pdf-lib')
+  if (!entries.length) throw new Error('There is nothing to make bookmarks from.')
+  const doc = await load(bytes)
+  const ctx = doc.context
+  const pages = doc.getPages()
+
+  const outlinesRef = ctx.nextRef()
+  const itemRefs = entries.map(() => ctx.nextRef())
+
+  entries.forEach((entry, i) => {
+    const page = pages[Math.min(entry.page, pages.length - 1)]
+    const dict = ctx.obj({
+      Title: PDFString.of(entry.title),
+      Parent: outlinesRef,
+      Dest: [page.ref, PDFName.of('XYZ'), PDFNumber.of(0), PDFNumber.of(page.getSize().height), PDFNumber.of(0)]
+    })
+    if (i > 0) dict.set(PDFName.of('Prev'), itemRefs[i - 1])
+    if (i < entries.length - 1) dict.set(PDFName.of('Next'), itemRefs[i + 1])
+    ctx.assign(itemRefs[i], dict)
+  })
+
+  const outlines = ctx.obj({ Type: 'Outlines', Count: entries.length })
+  outlines.set(PDFName.of('First'), itemRefs[0])
+  outlines.set(PDFName.of('Last'), itemRefs[itemRefs.length - 1])
+  ctx.assign(outlinesRef, outlines)
+
+  doc.catalog.set(PDFName.of('Outlines'), outlinesRef)
+  doc.catalog.set(PDFName.of('PageMode'), PDFName.of('UseOutlines'))
+  return asBlob(doc)
+}
+
+/* ---------- split at a list of page indices ---------- */
+
+export async function splitAt(bytes, starts, baseName) {
+  const { PDFDocument } = await import('pdf-lib')
+  const src = await load(bytes)
+  const count = src.getPageCount()
+  const bounds = [...new Set(starts.filter(n => n > 0 && n < count))].sort((a, b) => a - b)
+  const groups = []
+  let from = 0
+  for (const b of [...bounds, count]) {
+    if (b > from) groups.push(Array.from({ length: b - from }, (_, i) => from + i))
+    from = b
+  }
+  if (groups.length < 2) throw new Error('Nothing was found to split on.')
+
+  const files = []
+  for (const group of groups) {
+    const out = await PDFDocument.create()
+    const copied = await out.copyPages(src, group)
+    copied.forEach(p => out.addPage(p))
+    files.push({
+      name: `${baseName}-${group[0] + 1}-${group[group.length - 1] + 1}.pdf`,
+      data: new Uint8Array(await out.save({ useObjectStreams: false }))
+    })
+  }
+  return files
+}

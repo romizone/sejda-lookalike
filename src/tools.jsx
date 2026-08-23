@@ -14,6 +14,7 @@ const VIOLET = { tint: '#ece6fd', ink: '#7250c8' }
 
 export const GROUPS = [
   'Most popular',
+  'Split & mix',
   'Organise pages',
   'Edit & sign',
   'Compress & scans',
@@ -72,6 +73,31 @@ export const TOOLS = [
   },
 
   {
+    id: 'mix', group: 'Split & mix', ...GREEN,
+    name: 'Alternate & Mix', blurb: 'Mixes pages from 2 or more documents, alternating between them',
+    icon: svg(<><rect x="3" y="4" width="7" height="16" rx="1.3" /><rect x="14" y="4" width="7" height="16" rx="1.3" /><path d="M10 9h4M10 15h4" /></>)
+  },
+  {
+    id: 'splithalf', group: 'Split & mix', ...GREEN,
+    name: 'Split In Half', blurb: 'Split two page layout scans, A3 to double A4 or A4 to double A5',
+    icon: svg(<><rect x="3" y="4" width="18" height="16" rx="1.6" /><path d="M12 4v16" strokeDasharray="3 3" /></>)
+  },
+  {
+    id: 'splitsize', group: 'Split & mix', ...GREEN,
+    name: 'Split By Size', blurb: 'Get multiple smaller documents with specific file sizes',
+    icon: svg(<><rect x="3" y="7" width="10" height="13" rx="1.4" /><path d="M8 3.5h9A1.5 1.5 0 0 1 18.5 5v9" /><path d="M17 17h4M19 15v4" /></>)
+  },
+  {
+    id: 'splittext', group: 'Split & mix', ...GREEN,
+    name: 'Split By Text', blurb: 'Extract separate documents when specific text changes from page to page',
+    icon: svg(<><rect x="3" y="4" width="18" height="16" rx="1.6" /><path d="M7 9h6M7 13h10M7 17h4" /></>)
+  },
+  {
+    id: 'splitbookmarks', group: 'Split & mix', ...GREEN,
+    name: 'Split By Bookmarks', blurb: 'Extract chapters to separate documents based on the bookmarks in the table of contents',
+    icon: svg(<><path d="M6 3h12v18l-6-4-6 4z" /></>)
+  },
+  {
     id: 'organise', group: 'Organise pages', ...GREEN,
     name: 'Organize', blurb: 'Reorder, rotate and drop pages, all on one board',
     icon: svg(<><rect x="3" y="4" width="7" height="9" rx="1.3" /><rect x="14" y="4" width="7" height="9" rx="1.3" /><path d="M3 17h18" /><path d="M3 21h11" /></>)
@@ -87,6 +113,16 @@ export const TOOLS = [
     icon: svg(<><rect x="3" y="3" width="8" height="8" rx="1.2" /><rect x="13" y="3" width="8" height="8" rx="1.2" /><rect x="3" y="13" width="8" height="8" rx="1.2" /><rect x="13" y="13" width="8" height="8" rx="1.2" /></>)
   },
 
+  {
+    id: 'flip', group: 'Organise pages', ...GREEN,
+    name: 'Flip', blurb: 'Mirror pages horizontally or vertically',
+    icon: svg(<><path d="M12 3v18" strokeDasharray="3 3" /><path d="M9 7 4 12l5 5z" /><path d="m15 7 5 5-5 5z" /></>)
+  },
+  {
+    id: 'resize', group: 'Organise pages', ...PINK,
+    name: 'Resize', blurb: 'Change PDF page size, contents scaled to fit',
+    icon: svg(<><rect x="3" y="6" width="12" height="12" rx="1.4" /><path d="M17 4h4v4M21 4l-6 6" /></>)
+  },
   {
     id: 'watermark', group: 'Edit & sign', ...VIOLET,
     name: 'Watermark', blurb: 'Stamp a word across every page, at the angle and weight you choose',
@@ -115,6 +151,21 @@ export const TOOLS = [
     icon: svg(<><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" /><path d="M8 15V9h1.6a2 2 0 0 1 0 4H8m8-4h-2.2a1.4 1.4 0 0 0 0 2.8h.9a1.4 1.4 0 0 1 0 2.8H12" /></>)
   },
   {
+    id: 'bates', group: 'Edit & sign', ...VIOLET,
+    name: 'Bates Numbering', blurb: 'Bates stamp multiple files at once, numbering running across them',
+    icon: svg(<><rect x="3" y="4" width="14" height="16" rx="1.4" /><path d="M21 8v10a2 2 0 0 1-2 2H8" /><path d="M7 16h6" /></>)
+  },
+  {
+    id: 'annotations', group: 'Edit & sign', ...VIOLET,
+    name: 'Remove Annotations', blurb: 'Batch remove highlights, strikeouts or any other annotations',
+    icon: svg(<><path d="M4 20h4l10-10a2.5 2.5 0 0 0-3.5-3.5L4.5 16.5 4 20z" /><path d="m14 6 4 4" /><path d="M17 17l4 4M21 17l-4 4" /></>)
+  },
+  {
+    id: 'forms', group: 'Edit & sign', ...BLUE,
+    name: 'Create Forms', blurb: 'Free PDF forms creator. Make existing PDF documents fillable',
+    icon: svg(<><rect x="3" y="4" width="18" height="16" rx="1.6" /><rect x="6" y="8" width="12" height="3" rx="1" /><rect x="6" y="14" width="7" height="3" rx="1" /></>)
+  },
+  {
     id: 'toimages', group: 'Convert from PDF', ...ORANGE,
     name: 'PDF To JPG', blurb: 'Turn each page into a JPG or PNG picture',
     icon: svg(<><rect x="3" y="5" width="18" height="14" rx="1.8" /><circle cx="8.5" cy="10" r="1.5" /><path d="m4 17 5-5 3 3 3.5-3.5L20 16" /></>)
@@ -130,6 +181,11 @@ export const TOOLS = [
     icon: svg(<><rect x="3" y="3" width="13" height="13" rx="1.6" /><path d="M8 21h11a2 2 0 0 0 2-2V8" /><path d="m4 13 3.5-3.5L11 13" /></>)
   },
 
+  {
+    id: 'toppt', group: 'Convert from PDF', ...ORANGE,
+    name: 'PDF To PPT', blurb: 'Convert PDF to PowerPoint online',
+    icon: svg(<><rect x="3" y="4" width="18" height="13" rx="1.6" /><path d="M12 17v3M9 20h6" /><path d="M9 8h3.2a1.9 1.9 0 0 1 0 3.8H9V8z" /></>)
+  },
   {
     id: 'topdf', group: 'Convert to PDF', ...ORANGE,
     name: 'JPG To PDF', blurb: 'Put your pictures into a PDF, one page each',
@@ -155,6 +211,21 @@ export const TOOLS = [
     id: 'redact', group: 'Security', ...VIOLET,
     name: 'Redact', blurb: 'Black out anything private, and take the words away with it',
     icon: svg(<><rect x="3" y="4" width="18" height="16" rx="1.6" /><path d="M6 9h8M6 13h12M6 17h5" strokeWidth="2.6" /></>)
+  },
+  {
+    id: 'grayscale', group: 'Compress & scans', ...PINK,
+    name: 'Grayscale', blurb: 'Make the pictures in a PDF grey',
+    icon: svg(<><circle cx="12" cy="12" r="9" /><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none" /></>)
+  },
+  {
+    id: 'bookmarks', group: 'Document', ...BLUE,
+    name: 'Create Bookmarks', blurb: 'Build a table of contents from the headings, or one entry per page',
+    icon: svg(<><path d="M6 3h12v18l-6-4-6 4z" /><path d="M9 8h6" /></>)
+  },
+  {
+    id: 'rename', group: 'Document', ...BLUE,
+    name: 'Rename', blurb: 'Change the document filename based on text from its pages',
+    icon: svg(<><path d="M7 3h7l4 4v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v4h4" /><path d="M9 15h6" /></>)
   },
   {
     id: 'repair', group: 'Document', ...BLUE,
