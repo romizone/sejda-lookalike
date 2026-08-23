@@ -1,4 +1,4 @@
-import React, { useEffect, useReducer, useRef } from 'react'
+import React, { useEffect, useReducer, useRef, useState } from 'react'
 import { reducer, initialState, ACT } from './store'
 import { BASE_SCALE, baseName, uid } from './utils/misc'
 import pdfjs from './lib/pdfjs'
@@ -6,6 +6,14 @@ import { extractLines } from './lib/extract'
 import { exportEditedPdf } from './lib/exporter'
 import { makeSamplePdf } from './lib/sample'
 import Landing from './components/Landing'
+import Home from './components/Home'
+import PagesTool from './components/tools/PagesTool'
+import SplitTool from './components/tools/SplitTool'
+import MergeTool from './components/tools/MergeTool'
+import CropTool from './components/tools/CropTool'
+import CompressTool from './components/tools/CompressTool'
+import WordTool from './components/tools/WordTool'
+import { toolById } from './tools'
 import Header from './components/Header'
 import Toolbar from './components/Toolbar'
 import FormatBar from './components/FormatBar'
@@ -16,6 +24,8 @@ import { ocrPage } from './lib/ocr'
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
+  const [view, setView] = useState('home')
+  const [intent, setIntent] = useState(null)
   const stateRef = useRef(state)
   stateRef.current = state
   const docRef = useRef({ canvases: {}, pagesMap: {}, pageDims: {}, widgets: {}, linkPages: {}, dpr: 1 })
@@ -290,10 +300,48 @@ export default function App() {
   }, [])
 
   const restart = () => dispatch({ type: ACT.RESET })
+  const goHome = () => { dispatch({ type: ACT.RESET }); setIntent(null); setView('home') }
+
+  const openTool = id => {
+    if (id === 'editor' || id === 'sign') {
+      dispatch({ type: ACT.RESET })
+      setIntent(id === 'sign' ? 'sign' : null)
+      setView('editor')
+      return
+    }
+    setView(id)
+  }
+
+  // Fill & Sign is the editor with the signature panel already open.
+  useEffect(() => {
+    if (state.phase === 'editor' && intent === 'sign') {
+      dispatch({ type: ACT.PANEL, panel: 'sign' })
+      setIntent(null)
+    }
+  }, [state.phase, intent])
+
+  const toolScreen = () => {
+    const tool = toolById(view)
+    if (!tool) return null
+    switch (view) {
+      case 'delete': return <PagesTool tool={tool} mode="delete" onBack={goHome} />
+      case 'extract': return <PagesTool tool={tool} mode="extract" onBack={goHome} />
+      case 'split': return <SplitTool tool={tool} onBack={goHome} />
+      case 'merge': return <MergeTool tool={tool} onBack={goHome} />
+      case 'crop': return <CropTool tool={tool} onBack={goHome} />
+      case 'compress': return <CompressTool tool={tool} onBack={goHome} />
+      case 'word': return <WordTool tool={tool} onBack={goHome} />
+      default: return null
+    }
+  }
 
   return (
     <div className="app">
-      {state.phase === 'editor' && (
+      {view === 'home' && <Home onOpen={openTool} />}
+
+      {view !== 'home' && view !== 'editor' && toolScreen()}
+
+      {view === 'editor' && state.phase === 'editor' && (
         <>
           <Header
             fileName={state.fileName}
@@ -301,6 +349,7 @@ export default function App() {
             busy={state.busy}
             onRestart={restart}
             onApply={applyChanges}
+            onHome={goHome}
           />
           <Toolbar state={state} dispatch={dispatch} pageOps={pageOps} />
           <FormatBar state={state} dispatch={dispatch} />
@@ -308,8 +357,8 @@ export default function App() {
         </>
       )}
 
-      {state.phase === 'landing' && (
-        <Landing onFile={openFile} onSample={openSample} error={state.error} busy={state.busy} />
+      {view === 'editor' && state.phase === 'landing' && (
+        <Landing onFile={openFile} onSample={openSample} error={state.error} busy={state.busy} onBack={goHome} />
       )}
 
       {state.panel === 'ocr' && (

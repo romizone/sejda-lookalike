@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react'
 
-export default function Landing({ onFile, onSample, error }) {
+export default function Landing({ onFile, onSample, error, onBack }) {
   const inputRef = useRef(null)
   const [over, setOver] = useState(false)
 
@@ -11,6 +11,12 @@ export default function Landing({ onFile, onSample, error }) {
 
   return (
     <div className="landing">
+      {onBack && (
+        <button className="tool-back landing-back" onClick={onBack}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="m14 6-6 6 6 6" /></svg>
+          All tools
+        </button>
+      )}
       <div className="brand">
         <div className="brand-logo">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none">

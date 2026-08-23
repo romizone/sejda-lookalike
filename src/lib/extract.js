@@ -18,6 +18,11 @@ function normFam(f) {
   return 'sans-serif'
 }
 
+// pdf.js hands back the embedded font's own name often enough that the weight
+// and slant can simply be read off it.
+const isBoldName = f => /bold|black|heavy|semibold|demibold/i.test(String(f || ''))
+const isItalicName = f => /italic|oblique/i.test(String(f || ''))
+
 export async function extractLines(page, scale, pageNo) {
   // Always read the page in its unrotated frame. A rotated viewport turns the
   // glyph runs sideways, and grouping by y would then stitch separate lines
@@ -45,7 +50,9 @@ export async function extractLines(page, scale, pageNo) {
       h: hy,
       asc,
       desc,
-      fam: normFam(st.fontFamily)
+      fam: normFam(st.fontFamily),
+      bold: isBoldName(st.fontFamily),
+      italic: isItalicName(st.fontFamily)
     })
   })
 
@@ -114,14 +121,14 @@ export async function extractLines(page, scale, pageNo) {
       asc: dom.asc,
       desc: dom.desc,
       family: dom.fam,
+      bold: !!dom.bold,
+      italic: !!dom.italic,
       wideGap,
       rect: { x: x - 1, y: top - 1, w: (xe - x) + 2, h: rectH + 2 },
       dirty: false,
       deleted: false,
       color: null,
       bg: null,
-      bold: false,
-      italic: false,
       underline: false
     })
   }
@@ -154,6 +161,8 @@ export function groupParagraphs(lines, pageNo) {
     const ok =
       !L.wideGap && !ln.wideGap && !listy &&
       ln.family === L.family &&
+      !!ln.bold === !!L.bold &&
+      !!ln.italic === !!L.italic &&
       Math.abs(ln.fontSize - L.fontSize) <= Math.max(1, 0.22 * L.fontSize) &&
       ratio > 0.55 &&
       ratio < 1.75 &&
@@ -210,14 +219,14 @@ function buildPara(ls, pageNo, pi) {
     asc: dom.asc,
     desc: dom.desc,
     family: dom.fam,
+    bold: !!dom.bold,
+    italic: !!dom.italic,
     wideGap: false,
     rect: { x: rx, y: ry, w: re - rx, h: rb - ry },
     dirty: false,
     deleted: false,
     color: null,
     bg: null,
-    bold: false,
-    italic: false,
     underline: false
   }
 }

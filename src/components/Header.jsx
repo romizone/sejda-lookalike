@@ -1,7 +1,7 @@
 import React from 'react'
 import { baseName } from '../utils/misc'
 
-export default function Header({ fileName, dirty, busy, onRestart, onApply }) {
+export default function Header({ fileName, dirty, busy, onRestart, onApply, onHome }) {
   return (
     <div className="header">
       <div className="brand-mini">
@@ -14,6 +14,8 @@ export default function Header({ fileName, dirty, busy, onRestart, onApply }) {
         </div>
         <strong>EditPDF</strong>
       </div>
+
+      <button className="header-home" onClick={onHome} title="Back to all tools">All tools</button>
 
       <span className="fname">{fileName}</span>
       {dirty && <span className="badge-dirty">Modified</span>}
