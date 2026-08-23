@@ -128,7 +128,66 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
     )
   }
 
-  if (ob.kind === 'line') {
+  if (ob.kind === 'mark') {
+    const st = { ...base, pointerEvents: 'auto' }
+    if (ob.variant === 'highlight') {
+      st.background = ob.color || '#ffe14d'
+      st.opacity = 0.42
+      st.mixBlendMode = 'multiply'
+    }
+    return (
+      <div
+        className={`pobj mark mark-${ob.variant} ${isSel ? 'selected' : ''}`}
+        style={st}
+        data-id={ob.id}
+        onPointerDown={e => handlers.objDown(e, ob)}
+      >
+        {ob.variant !== 'highlight' && (
+          <span
+            className="mark-bar"
+            style={{
+              background: ob.color || (ob.variant === 'strike' ? '#e11d48' : '#2563eb'),
+              top: ob.variant === 'strike' ? '52%' : undefined,
+              bottom: ob.variant === 'underline' ? 1 : undefined,
+              height: Math.max(1.5, ob.h * 0.09)
+            }}
+          />
+        )}
+      </div>
+    )
+  }
+
+  if (ob.kind === 'link') {
+    return (
+      <div
+        className={`pobj linkbox ${isSel ? 'selected' : ''} ${ob.url ? '' : 'empty'}`}
+        style={base}
+        data-id={ob.id}
+        title={ob.url || 'No URL yet'}
+        onPointerDown={e => handlers.objDown(e, ob)}
+      >
+        {isSel && <span className="handle" onPointerDown={e => handlers.resizeDown(e, ob)} />}
+      </div>
+    )
+  }
+
+  if (ob.kind === 'field') {
+    return (
+      <div
+        className={`pobj fieldbox ${isSel ? 'selected' : ''}`}
+        style={base}
+        data-id={ob.id}
+        onPointerDown={e => handlers.objDown(e, ob)}
+      >
+        <span className="field-tag">{ob.fieldType}</span>
+        <span className="field-name">{ob.name}</span>
+        {isSel && <span className="handle" onPointerDown={e => handlers.resizeDown(e, ob)} />}
+      </div>
+    )
+  }
+
+  if (ob.kind === 'line' || ob.kind === 'arrow') {
+
     const x0 = Math.min(ob.x, ob.x1), y0 = Math.min(ob.y, ob.y1)
     const w = Math.abs(ob.x1 - ob.x) || 1, h = Math.abs(ob.y1 - ob.y) || 1
     return (
@@ -139,12 +198,20 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
         onPointerDown={e => handlers.objDown(e, ob)}
       >
         <svg width="100%" height="100%" style={{ overflow: 'visible' }}>
+          {ob.kind === 'arrow' && (
+            <defs>
+              <marker id={`ah-${ob.id}`} markerWidth="6" markerHeight="6" refX="4.6" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6 z" fill={ob.stroke || '#e11d48'} />
+              </marker>
+            </defs>
+          )}
           <line
             x1={ob.x - x0 + 3} y1={ob.y - y0 + 3}
             x2={ob.x1 - x0 + 3} y2={ob.y1 - y0 + 3}
             stroke={ob.stroke || '#2563eb'}
             strokeWidth={ob.strokeWidth || 2}
             strokeLinecap="round"
+            markerEnd={ob.kind === 'arrow' ? `url(#ah-${ob.id})` : undefined}
           />
         </svg>
       </div>
@@ -167,6 +234,69 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
     >
       {isSel && <span className="handle" onPointerDown={e => handlers.resizeDown(e, ob)} />}
     </div>
+  )
+}
+
+const MARK_TOOLS = { highlight: 'highlight', strike: 'strike', underline: 'underline' }
+const MARK_COLORS = { highlight: '#ffe14d', strike: '#e11d48', underline: '#2563eb' }
+const FIELD_TOOLS = {
+  'field-text': 'text',
+  'field-multiline': 'multiline',
+  'field-check': 'check',
+  'field-radio': 'radio',
+  'field-dropdown': 'dropdown'
+}
+const BAND_TOOLS = new Set([
+  'whiteout', 'rect', 'ellipse', 'line', 'arrow',
+  'highlight', 'strike', 'underline', 'link',
+  ...Object.keys(FIELD_TOOLS)
+])
+
+/* ---------- form widgets that already exist in the PDF ---------- */
+
+function Widget({ wd, value, onChange }) {
+  const box = { left: wd.x, top: wd.y, width: wd.w, height: wd.h }
+  const fs = Math.max(9, Math.min(wd.h * 0.62, 22))
+
+  if (wd.type === 'check' || wd.type === 'radio') {
+    const on = wd.type === 'radio' ? value === wd.exportValue : !!value
+    return (
+      <div className={`pwidget check ${wd.readOnly ? 'ro' : ''}`} style={box}>
+        <input
+          type={wd.type === 'radio' ? 'radio' : 'checkbox'}
+          name={wd.name}
+          checked={on}
+          disabled={wd.readOnly}
+          onChange={e => onChange(wd.type === 'radio' ? wd.exportValue : e.target.checked)}
+        />
+      </div>
+    )
+  }
+
+  if (wd.type === 'dropdown') {
+    return (
+      <select
+        className={`pwidget input ${wd.readOnly ? 'ro' : ''}`}
+        style={{ ...box, fontSize: fs }}
+        value={value ?? ''}
+        disabled={wd.readOnly}
+        onChange={e => onChange(e.target.value)}
+      >
+        <option value="" />
+        {(wd.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    )
+  }
+
+  const Tag = wd.multiline ? 'textarea' : 'input'
+  return (
+    <Tag
+      className={`pwidget input ${wd.readOnly ? 'ro' : ''}`}
+      style={{ ...box, fontSize: fs }}
+      value={value ?? ''}
+      readOnly={wd.readOnly}
+      onChange={e => onChange(e.target.value)}
+    />
   )
 }
 
@@ -229,7 +359,7 @@ function caretFromPoint(el, pt) {
   return false
 }
 
-export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeText, selection, pendingImage, dispatch, ACT, docRef }) {
+export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeText, selection, pendingImage, formValues, dispatch, ACT, docRef }) {
   const holderRef = useRef(null)
   const overlayRef = useRef(null)
   const canvasRef = useRef(null)
@@ -284,6 +414,34 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
   const toBase = (clientX, clientY) => {
     const r = overlayRef.current.getBoundingClientRect()
     return { x: (clientX - r.left) / zoom, y: (clientY - r.top) / zoom }
+  }
+
+  // A highlight should follow the rendered rows of text, not the rectangle the
+  // pointer swept, so each row the band touches contributes its own bar.
+  const marksOverText = (band, tool) => {
+    const out = []
+    const ov = overlayRef.current
+    if (!ov) return out
+    const variant = MARK_TOOLS[tool]
+    for (const ln of liveLines) {
+      const el = ov.querySelector(`[data-id="${ln.id}"]`)
+      if (!el) continue
+      const range = document.createRange()
+      range.selectNodeContents(el)
+      for (const cr of Array.from(range.getClientRects())) {
+        const a = toBase(cr.left, cr.top)
+        const b = toBase(cr.right, cr.bottom)
+        const rowH = b.y - a.y
+        const x = Math.max(a.x, band.x)
+        const x2 = Math.min(b.x, band.x + band.w)
+        const y2 = Math.min(b.y, band.y + band.h)
+        const overlapY = Math.min(b.y, band.y + band.h) - Math.max(a.y, band.y)
+        if (x2 - x > 2 && rowH > 2 && overlapY > rowH * 0.35 && y2 > band.y) {
+          out.push({ id: uid(), kind: 'mark', variant, x, y: a.y, w: x2 - x, h: rowH, color: MARK_COLORS[variant] })
+        }
+      }
+    }
+    return out
   }
 
   const push = () => dispatch({ type: ACT.PUSH })
@@ -353,7 +511,7 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
     dispatch({ type: ACT.SELECT, sel: { kind: 'obj', page: idx, id: ob.id } })
     push()
     const p = toBase(e.clientX, e.clientY)
-    if (ob.kind === 'line') {
+    if (ob.kind === 'line' || ob.kind === 'arrow') {
       bindWindow({ mode: 'moveLine', obj: ob, x0: p.x, y0: p.y, ox: ob.x, oy: ob.y, ox1: ob.x1, oy1: ob.y1 })
     } else {
       bindWindow({ mode: 'move', obj: ob, x0: p.x, y0: p.y, ox: ob.x, oy: ob.y })
@@ -554,7 +712,7 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
       return
     }
 
-    if (tool === 'whiteout' || tool === 'rect' || tool === 'ellipse' || tool === 'line') {
+    if (BAND_TOOLS.has(tool)) {
       push()
       bandRef.current = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
       setBand(bandRef.current)
@@ -573,15 +731,49 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
         const bx = Math.min(cur.x0, cur.x1), by = Math.min(cur.y0, cur.y1)
         const bw = Math.abs(cur.x1 - cur.x0), bh = Math.abs(cur.y1 - cur.y0)
         const id = uid()
+        const tiny = () => dispatch({ type: ACT.UNDO_REVERT })
+
         if (tool === 'whiteout') {
           if (bw > 4 && bh > 4) dispatch({ type: ACT.OBJ_ADD, page: idx, obj: { id, kind: 'whiteout', x: bx, y: by, w: bw, h: bh } })
-          else dispatch({ type: ACT.UNDO_REVERT })
-        } else if (tool === 'line') {
-          if (Math.hypot(bw, bh) > 8) dispatch({ type: ACT.OBJ_ADD, page: idx, obj: { id, kind: 'line', x: cur.x0, y: cur.y0, x1: cur.x1, y1: cur.y1, stroke: '#e11d48', strokeWidth: 2 } })
-          else dispatch({ type: ACT.UNDO_REVERT })
+          else tiny()
+        } else if (tool === 'line' || tool === 'arrow') {
+          if (Math.hypot(bw, bh) > 8) dispatch({ type: ACT.OBJ_ADD, page: idx, obj: { id, kind: tool, x: cur.x0, y: cur.y0, x1: cur.x1, y1: cur.y1, stroke: '#e11d48', strokeWidth: 2 } })
+          else tiny()
+        } else if (MARK_TOOLS[tool]) {
+          const made = marksOverText({ x: bx, y: by, w: bw, h: bh }, tool)
+          if (made.length) {
+            made.forEach(m => dispatch({ type: ACT.OBJ_ADD, page: idx, obj: m }))
+            dispatch({ type: ACT.SET_TOOL, tool: 'select' })
+          } else tiny()
+        } else if (tool === 'link') {
+          if (bw > 6 && bh > 6) {
+            dispatch({ type: ACT.OBJ_ADD, page: idx, obj: { id, kind: 'link', x: bx, y: by, w: bw, h: bh, url: '' } })
+            dispatch({ type: ACT.SET_TOOL, tool: 'select' })
+            dispatch({ type: ACT.SELECT, sel: { kind: 'obj', page: idx, id } })
+          } else tiny()
+        } else if (FIELD_TOOLS[tool]) {
+          const fieldType = FIELD_TOOLS[tool]
+          const box = fieldType === 'check' || fieldType === 'radio'
+            ? { x: bx, y: by, w: Math.max(bw, 24), h: Math.max(bh, 24) }
+            : { x: bx, y: by, w: Math.max(bw, 60), h: Math.max(bh, fieldType === 'multiline' ? 60 : 30) }
+          if (bw > 4 && bh > 4) {
+            dispatch({
+              type: ACT.OBJ_ADD,
+              page: idx,
+              obj: {
+                id, kind: 'field', fieldType,
+                name: `${fieldType}_${id}`,
+                ...box,
+                value: '',
+                options: fieldType === 'dropdown' || fieldType === 'radio' ? ['Option 1', 'Option 2'] : undefined
+              }
+            })
+            dispatch({ type: ACT.SET_TOOL, tool: 'select' })
+            dispatch({ type: ACT.SELECT, sel: { kind: 'obj', page: idx, id } })
+          } else tiny()
         } else {
           if (bw > 4 && bh > 4) dispatch({ type: ACT.OBJ_ADD, page: idx, obj: { id, kind: tool, x: bx, y: by, w: bw, h: bh, stroke: '#2563eb', fill: 'none', strokeWidth: 2 } })
-          else dispatch({ type: ACT.UNDO_REVERT })
+          else tiny()
         }
       }
       window.addEventListener('pointermove', mv)
@@ -618,6 +810,14 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
                 key={ln.id}
                 className="pline-patch"
                 style={{ left: ln.rect.x, top: ln.rect.y, width: ln.rect.w, height: ln.rect.h, background: ln.bg || '#fff' }}
+              />
+            ))}
+            {(docRef.widgets?.[idx] || []).map(wd => (
+              <Widget
+                key={wd.id}
+                wd={wd}
+                value={formValues?.[wd.key]}
+                onChange={v => dispatch({ type: ACT.FORM_SET, key: wd.key, value: v })}
               />
             ))}
             {liveLines.map(ln => (

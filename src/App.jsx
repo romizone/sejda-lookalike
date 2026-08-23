@@ -10,17 +10,18 @@ import Header from './components/Header'
 import Toolbar from './components/Toolbar'
 import FormatBar from './components/FormatBar'
 import Workspace from './components/Workspace'
+import SignModal from './components/SignModal'
 
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const stateRef = useRef(state)
   stateRef.current = state
-  const docRef = useRef({ canvases: {}, pagesMap: {}, pageDims: {}, dpr: 1 })
+  const docRef = useRef({ canvases: {}, pagesMap: {}, pageDims: {}, widgets: {}, linkPages: {}, dpr: 1 })
 
   const loadBytes = async (bytes, fileName) => {
     dispatch({ type: ACT.OPEN_START })
     try {
-      const myDoc = { canvases: {}, pagesMap: {}, pageDims: {}, dpr: 1, gen: (docRef.current?.gen || 0) + 1 }
+      const myDoc = { canvases: {}, pagesMap: {}, pageDims: {}, widgets: {}, linkPages: {}, dpr: 1, gen: (docRef.current?.gen || 0) + 1 }
       docRef.current = myDoc
       const clone = new Uint8Array(bytes.byteLength)
       clone.set(new Uint8Array(bytes))
@@ -38,11 +39,69 @@ export default function App() {
         const lines = await extractLines(page, BASE_SCALE, i - 1)
         if (docRef.current !== myDoc) return
         dispatch({ type: ACT.SET_LINES, page: i - 1, lines })
+        await importAnnotations(page, vp, i - 1, myDoc)
       }
     } catch (err) {
       console.error(err)
       dispatch({ type: ACT.OPEN_FAIL, error: 'Could not open this PDF. ' + (err?.message || '') })
     }
+  }
+
+  // Existing widgets stay live so forms can be filled in, and existing links
+  // become ordinary objects so they can be edited or removed like new ones.
+  const importAnnotations = async (page, vp, pi, myDoc) => {
+    let annots = []
+    try { annots = await page.getAnnotations({ intent: 'display' }) } catch { return }
+    if (docRef.current !== myDoc) return
+
+    const toBox = rect => {
+      const r = vp.convertToViewportRectangle(rect)
+      return {
+        x: Math.min(r[0], r[2]),
+        y: Math.min(r[1], r[3]),
+        w: Math.abs(r[2] - r[0]),
+        h: Math.abs(r[3] - r[1])
+      }
+    }
+
+    const TYPE = { Tx: 'text', Btn: 'check', Ch: 'dropdown' }
+    const widgets = []
+    const values = {}
+    const links = []
+
+    annots.forEach((a, ai) => {
+      if (a.subtype === 'Widget' && a.fieldType) {
+        const box = toBox(a.rect)
+        if (box.w < 2 || box.h < 2) return
+        let type = TYPE[a.fieldType] || 'text'
+        if (a.fieldType === 'Btn') type = a.radioButton ? 'radio' : a.checkBox ? 'check' : null
+        if (!type) return
+        const key = `${a.fieldName || 'f' + ai}`
+        widgets.push({
+          id: `W${pi}_${ai}`,
+          key,
+          name: a.fieldName || key,
+          type,
+          multiline: !!a.multiLine,
+          readOnly: !!a.readOnly,
+          options: (a.options || []).map(o => (typeof o === 'string' ? o : o.displayValue || o.exportValue)),
+          exportValue: a.exportValue || a.buttonValue || 'Yes',
+          ...box
+        })
+        if (values[key] === undefined) {
+          if (type === 'check') values[key] = a.fieldValue && a.fieldValue !== 'Off'
+          else if (type === 'radio') values[key] = a.fieldValue && a.fieldValue !== 'Off' ? a.fieldValue : ''
+          else values[key] = a.fieldValue ?? ''
+        }
+      } else if (a.subtype === 'Link' && a.url) {
+        links.push({ id: `K${pi}_${ai}`, kind: 'link', url: a.url, imported: true, ...toBox(a.rect) })
+      }
+    })
+
+    myDoc.widgets[pi] = widgets
+    myDoc.linkPages[pi] = true
+    if (Object.keys(values).length) dispatch({ type: ACT.FORM_SEED, values })
+    if (links.length) dispatch({ type: ACT.OBJ_SEED, page: pi, objects: links })
   }
 
   const openFile = async file => {
@@ -70,7 +129,9 @@ export default function App() {
         pages: s.pages,
         baseScale: BASE_SCALE,
         canvases: docRef.current.canvases,
-        dpr: docRef.current.dpr || 1
+        dpr: docRef.current.dpr || 1,
+        formValues: s.formValues,
+        linkPages: docRef.current.linkPages || {}
       })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -151,6 +212,16 @@ export default function App() {
 
       {state.phase === 'landing' && (
         <Landing onFile={openFile} onSample={openSample} error={state.error} busy={state.busy} />
+      )}
+
+      {state.panel === 'sign' && (
+        <SignModal
+          onClose={() => dispatch({ type: ACT.PANEL, panel: null })}
+          onPlace={img => {
+            dispatch({ type: ACT.PANEL, panel: null })
+            dispatch({ type: ACT.PENDING_IMG, img })
+          }}
+        />
       )}
 
       {state.hint && (

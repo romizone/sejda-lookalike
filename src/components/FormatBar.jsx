@@ -84,7 +84,57 @@ export default function FormatBar({ state, dispatch }) {
         </>
       )}
 
-      {selObj && selObj.kind !== 'text' && selObj.kind !== 'whiteout' && selObj.kind !== 'image' && (
+      {selObj && selObj.kind === 'link' && (
+        <>
+          <span className="fb-label">Link URL</span>
+          <input
+            className="fb-url"
+            type="url"
+            placeholder="https://example.com"
+            value={selObj.url || ''}
+            onChange={e => patchObj({ url: e.target.value })}
+          />
+          <div className="fb-sep" />
+        </>
+      )}
+
+      {selObj && selObj.kind === 'field' && (
+        <>
+          <span className="fb-label">Field name</span>
+          <input
+            className="fb-url"
+            value={selObj.name || ''}
+            onChange={e => patchObj({ name: e.target.value })}
+          />
+          {(selObj.fieldType === 'dropdown' || selObj.fieldType === 'radio') && (
+            <>
+              <span className="fb-label">Choices</span>
+              <input
+                className="fb-url"
+                placeholder="Option 1, Option 2"
+                value={(selObj.options || []).join(', ')}
+                onChange={e => patchObj({ options: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+              />
+            </>
+          )}
+          <div className="fb-sep" />
+        </>
+      )}
+
+      {selObj && selObj.kind === 'mark' && (
+        <>
+          <span className="fb-label">{selObj.variant === 'highlight' ? 'Highlight' : selObj.variant === 'strike' ? 'Strikethrough' : 'Underline'}</span>
+          <input
+            className="fb-color"
+            type="color"
+            value={selObj.color || '#ffe14d'}
+            onChange={e => patchObj({ color: e.target.value })}
+          />
+          <div className="fb-sep" />
+        </>
+      )}
+
+      {selObj && (selObj.kind === 'rect' || selObj.kind === 'ellipse' || selObj.kind === 'line' || selObj.kind === 'arrow') && (
         <>
           <span className="fb-label">Stroke</span>
           <input className="fb-color" type="color" value={selObj.stroke || '#2563eb'} onChange={e => patchObj({ stroke: e.target.value })} />

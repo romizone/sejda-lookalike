@@ -2,6 +2,7 @@ import React, { useRef } from 'react'
 import PageView from './PageView'
 import Thumbs from './Thumbs'
 import BottomBar from './BottomBar'
+import FindPanel from './FindPanel'
 import { ACT } from '../store'
 
 export default function Workspace({ state, dispatch, docRef }) {
@@ -30,7 +31,9 @@ export default function Workspace({ state, dispatch, docRef }) {
   }
 
   return (
-    <div className="workspace">
+    <>
+      {state.panel === 'find' && <FindPanel state={state} dispatch={dispatch} onGoTo={goTo} />}
+      <div className="workspace">
       <Thumbs
         open={state.thumbsOpen}
         count={state.numPages}
@@ -52,6 +55,7 @@ export default function Workspace({ state, dispatch, docRef }) {
                 activeText={state.activeText}
                 selection={state.selection}
                 pendingImage={state.pendingImage}
+                formValues={state.formValues}
                 dispatch={dispatch}
                 ACT={ACT}
                 docRef={docRef}
@@ -61,6 +65,7 @@ export default function Workspace({ state, dispatch, docRef }) {
         </div>
         <BottomBar state={state} dispatch={dispatch} onGoTo={goTo} />
       </div>
-    </div>
+      </div>
+    </>
   )
 }

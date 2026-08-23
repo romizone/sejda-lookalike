@@ -24,9 +24,9 @@ export default function Landing({ onFile, onSample, error }) {
 
       <h1>Edit PDF files for free</h1>
       <p className="sub">
-        Click any text to edit it directly on the page — just like Sejda. Whiteout content,
-        add new text, images and shapes. Everything is processed locally in your browser;
-        your file never leaves your device.
+        Click any paragraph to retype it in place and watch it re-flow. Fill forms, sign,
+        highlight, add links, images and shapes, find and replace. Everything is processed
+        locally in your browser; your file never leaves your device.
       </p>
 
       <div

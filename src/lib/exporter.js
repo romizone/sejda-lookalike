@@ -32,8 +32,8 @@ async function convertToPng(doc, src) {
   return doc.embedPng(buf)
 }
 
-export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr = 1 }) {
-  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
+export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr = 1, formValues = {}, linkPages = {} }) {
+  const { PDFDocument, StandardFonts, rgb, PDFName, PDFString } = await import('pdf-lib')
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
   // embedFont resolves asynchronously; using the promise as if it were the
   // font makes every measurement and drawText throw, which the surrounding
@@ -147,6 +147,19 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
       else if (ln.dirty) cover(patchRect(ln), ln.bg)
     }
 
+    for (const o of pe.objects) {
+      if (o.kind !== 'mark') continue
+      const c = hexToRgb01(o.color || (o.variant === 'highlight' ? '#ffe14d' : '#e11d48'))
+      const color = rgb(c.r, c.g, c.b)
+      if (o.variant === 'highlight') {
+        page.drawRectangle({ x: X(o.x), y: Y(o.y + o.h), width: o.w * k, height: o.h * k, color, opacity: 0.42 })
+      } else {
+        const bar = Math.max(0.7, o.h * 0.075 * k)
+        const yy = o.variant === 'strike' ? Y(o.y + o.h * 0.56) : Y(o.y + o.h * 0.92)
+        page.drawRectangle({ x: X(o.x), y: yy, width: o.w * k, height: bar, color })
+      }
+    }
+
     for (const ln of dirtyLines) {
       if (!ln.color) ln.color = sampleTextColor(canvases?.[pi], ln.rect, dpr) || '#111111'
       const lay = layouts.get(ln.id)
@@ -185,18 +198,122 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
           opts.color = rgb(fc.r, fc.g, fc.b)
         }
         page.drawEllipse(opts)
-      } else if (o.kind === 'line') {
+      } else if (o.kind === 'line' || o.kind === 'arrow') {
         const st = hexToRgb01(o.stroke)
-        page.drawLine({
-          start: { x: X(o.x), y: Y(o.y) },
-          end: { x: X(o.x1), y: Y(o.y1) },
-          thickness: Math.max(0.5, (o.strokeWidth || 2) * k),
-          color: rgb(st.r, st.g, st.b)
-        })
+        const color = rgb(st.r, st.g, st.b)
+        const thickness = Math.max(0.5, (o.strokeWidth || 2) * k)
+        const sx = X(o.x), sy = Y(o.y), ex = X(o.x1), ey = Y(o.y1)
+        page.drawLine({ start: { x: sx, y: sy }, end: { x: ex, y: ey }, thickness, color })
+        if (o.kind === 'arrow') {
+          const ang = Math.atan2(ey - sy, ex - sx)
+          const head = Math.max(5, thickness * 4)
+          const wing = 0.42
+          page.drawLine({
+            start: { x: ex, y: ey },
+            end: { x: ex - head * Math.cos(ang - wing), y: ey - head * Math.sin(ang - wing) },
+            thickness, color
+          })
+          page.drawLine({
+            start: { x: ex, y: ey },
+            end: { x: ex - head * Math.cos(ang + wing), y: ey - head * Math.sin(ang + wing) },
+            thickness, color
+          })
+        }
       }
     }
+
+    writeLinks({ doc, page, objects: pe.objects, X, Y, replaceExisting: !!linkPages[pi], PDFName, PDFString })
+    writeNewFields({ doc, page, objects: pe.objects, X, Y, k })
   }
+
+  applyFormValues(doc, formValues)
 
   const out = await doc.save({ useObjectStreams: false })
   return new Blob([out], { type: 'application/pdf' })
+}
+
+function writeLinks({ doc, page, objects, X, Y, replaceExisting, PDFName, PDFString }) {
+  const links = objects.filter(o => o.kind === 'link' && o.url)
+  if (!links.length && !replaceExisting) return
+  const kept = []
+  const existing = page.node.Annots()
+  if (existing) {
+    for (let i = 0; i < existing.size(); i++) {
+      const ref = existing.get(i)
+      let sub = null
+      try { sub = doc.context.lookup(ref)?.get(PDFName.of('Subtype')) } catch { sub = null }
+      const isLink = sub === PDFName.of('Link')
+      if (replaceExisting && isLink) continue
+      kept.push(ref)
+    }
+  }
+  for (const o of links) {
+    const dict = doc.context.obj({
+      Type: 'Annot',
+      Subtype: 'Link',
+      Rect: [X(o.x), Y(o.y + o.h), X(o.x + o.w), Y(o.y)],
+      Border: [0, 0, 0],
+      F: 4,
+      A: { Type: 'Action', S: 'URI', URI: PDFString.of(o.url) }
+    })
+    kept.push(doc.context.register(dict))
+  }
+  page.node.set(PDFName.of('Annots'), doc.context.obj(kept))
+}
+
+function writeNewFields({ doc, page, objects, X, Y, k }) {
+  const fields = objects.filter(o => o.kind === 'field')
+  if (!fields.length) return
+  let form
+  try { form = doc.getForm() } catch { return }
+  for (const o of fields) {
+    const box = { x: X(o.x), y: Y(o.y + o.h), width: o.w * k, height: o.h * k }
+    try {
+      if (o.fieldType === 'text' || o.fieldType === 'multiline') {
+        const f = form.createTextField(o.name)
+        if (o.fieldType === 'multiline') f.enableMultiline()
+        if (o.value) f.setText(String(o.value))
+        f.addToPage(page, box)
+      } else if (o.fieldType === 'check') {
+        form.createCheckBox(o.name).addToPage(page, box)
+      } else if (o.fieldType === 'dropdown') {
+        const f = form.createDropdown(o.name)
+        f.addOptions(o.options && o.options.length ? o.options : ['Option 1'])
+        f.addToPage(page, box)
+      } else if (o.fieldType === 'radio') {
+        const f = form.createRadioGroup(o.name)
+        const opts = o.options && o.options.length ? o.options : ['Option 1', 'Option 2']
+        opts.forEach((opt, i) => {
+          f.addOptionToPage(opt, page, { ...box, y: box.y - i * (box.height + 6) })
+        })
+      }
+    } catch {
+      /* a name collision or an unsupported field just skips that one */
+    }
+  }
+}
+
+// Values typed into the fields the document already had. Duck-typed because a
+// minified build cannot be trusted to keep pdf-lib's class names.
+function applyFormValues(doc, values) {
+  const keys = Object.keys(values || {})
+  if (!keys.length) return
+  let form
+  try { form = doc.getForm() } catch { return }
+  let fields = []
+  try { fields = form.getFields() } catch { return }
+  for (const field of fields) {
+    let name
+    try { name = field.getName() } catch { continue }
+    if (!(name in values)) continue
+    const v = values[name]
+    try {
+      if (typeof field.setText === 'function') field.setText(v == null ? '' : String(v))
+      else if (typeof field.check === 'function') { if (v) field.check(); else field.uncheck() }
+      else if (typeof field.select === 'function') { if (v) field.select(String(v)) }
+    } catch {
+      /* value that no longer matches the field's options */
+    }
+  }
+  try { form.updateFieldAppearances() } catch {}
 }

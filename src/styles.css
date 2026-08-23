@@ -192,7 +192,9 @@ input, select { font-family: inherit; color: inherit; }
 .pgcanvas { display: block; width: 100%; height: 100%; }
 .overlay { position: absolute; inset: 0; }
 .overlay.tool-text, .overlay.tool-image { cursor: crosshair; }
-.overlay.tool-whiteout, .overlay.tool-rect, .overlay.tool-ellipse, .overlay.tool-line { cursor: crosshair; }
+.overlay.tool-whiteout, .overlay.tool-rect, .overlay.tool-ellipse, .overlay.tool-line,
+.overlay.tool-arrow, .overlay.tool-link, .overlay.tool-highlight, .overlay.tool-strike,
+.overlay.tool-underline, .overlay[class*='tool-field-'] { cursor: crosshair; }
 
 /* text lines */
 .pline-patch { position: absolute; z-index: 1; pointer-events: none; }
@@ -283,3 +285,163 @@ input, select { font-family: inherit; color: inherit; }
   .thumbs { display: none; }
   .tool { min-width: 50px; }
 }
+
+/* ---------- toolbar menus ---------- */
+.tb-menu { position: relative; display: inline-flex; }
+.tb-menu > .tool { position: relative; padding-right: 15px; }
+.tb-menu .caret { position: absolute; right: 5px; top: 50%; width: 9px; height: 9px; margin-top: -3px; opacity: 0.5; }
+.tb-pop {
+  position: fixed;
+  z-index: 60;
+  min-width: 178px;
+  padding: 5px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+}
+.pop-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: 6px;
+  font-size: 13.5px;
+  text-align: left;
+}
+.pop-item:hover { background: #f2f5f3; }
+.pop-item.on { background: var(--green-soft); color: var(--green-dark); font-weight: 600; }
+.pop-item em { margin-left: auto; font-style: normal; font-size: 11.5px; color: var(--sub); }
+.pop-swatch { width: 13px; height: 13px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.12); }
+.pop-sep { height: 1px; margin: 5px 4px; background: var(--line); }
+
+/* ---------- annotate marks ---------- */
+.pobj.mark { z-index: 3; cursor: move; }
+.pobj.mark.selected { outline: 1.4px solid var(--blue); outline-offset: 1px; }
+.mark-bar { position: absolute; left: 0; right: 0; border-radius: 1px; }
+
+/* ---------- links ---------- */
+.pobj.linkbox {
+  z-index: 5;
+  cursor: move;
+  border: 1.4px solid rgba(37, 99, 235, 0.75);
+  border-radius: 3px;
+  background: rgba(37, 99, 235, 0.09);
+}
+.pobj.linkbox.empty { border-style: dashed; border-color: #d97706; background: rgba(217, 119, 6, 0.1); }
+
+/* ---------- form fields ---------- */
+.pobj.fieldbox {
+  z-index: 5;
+  cursor: move;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border: 1.4px dashed #7c3aed;
+  border-radius: 3px;
+  background: rgba(124, 58, 237, 0.08);
+  overflow: hidden;
+}
+.field-tag {
+  flex: none;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #7c3aed;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.field-name { font-size: 11px; color: #5b21b6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.pwidget {
+  position: absolute;
+  z-index: 6;
+  border: 1.2px solid rgba(37, 99, 235, 0.5);
+  border-radius: 3px;
+  background: rgba(37, 99, 235, 0.06);
+  padding: 1px 4px;
+  font-family: inherit;
+  color: var(--ink);
+  resize: none;
+}
+.pwidget:focus { outline: 2px solid var(--blue); outline-offset: -1px; background: #fff; }
+.pwidget.ro { opacity: 0.6; border-style: dashed; }
+.pwidget.check { display: flex; align-items: center; justify-content: center; padding: 0; }
+.pwidget.check input { width: 78%; height: 78%; accent-color: var(--blue); }
+
+/* ---------- find and replace ---------- */
+.findbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  background: #fffbe9;
+  border-bottom: 1px solid #f2e3a8;
+  color: #6b5307;
+}
+.find-input {
+  height: 30px;
+  min-width: 170px;
+  padding: 0 9px;
+  border: 1px solid #e6d494;
+  border-radius: 7px;
+  background: #fff;
+  font-size: 13.5px;
+}
+.find-input:focus { outline: 2px solid var(--blue); outline-offset: -1px; }
+.find-count { min-width: 74px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.find-replace { padding: 5px 12px; font-size: 13px; }
+.find-case { display: flex; align-items: center; gap: 5px; font-size: 12.5px; }
+
+/* ---------- signature modal ---------- */
+.sign-modal { width: min(560px, 92vw); padding: 18px; gap: 0; align-items: stretch; text-align: left; }
+.sign-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 16px; }
+.sign-tabs { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.sign-tab { padding: 6px 13px; border-radius: 7px; font-size: 13.5px; font-weight: 600; color: var(--sub); }
+.sign-tab.on { background: var(--green-soft); color: var(--green-dark); }
+.sign-color { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--sub); }
+.sign-color input { width: 30px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; }
+.sign-pad {
+  width: 100%;
+  height: 190px;
+  border: 1.5px dashed #c8d2cb;
+  border-radius: 10px;
+  background: repeating-linear-gradient(45deg, #fcfdfc, #fcfdfc 9px, #f6f8f6 9px, #f6f8f6 18px);
+  touch-action: none;
+  cursor: crosshair;
+}
+.sign-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-size: 15px;
+}
+.sign-styles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.sign-style {
+  height: 62px;
+  border: 1.5px solid var(--line);
+  border-radius: 9px;
+  font-size: 27px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sign-style.on { border-color: var(--green); background: var(--green-soft); }
+.sign-actions { display: flex; align-items: center; margin-top: 14px; }
+.sign-upload { padding: 18px 4px; font-size: 13.5px; color: var(--sub); }
+.sign-upload p { margin: 0 0 12px; }
+
+.fb-url {
+  height: 28px;
+  min-width: 190px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.fb-url:focus { outline: 2px solid var(--blue); outline-offset: -1px; }

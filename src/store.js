@@ -12,6 +12,8 @@ export const initialState = {
   currentPage: 1,
   thumbsOpen: true,
   pendingImage: null,
+  panel: null,
+  formValues: {},
   hint: null,
   busy: null,
   error: null,
@@ -43,6 +45,10 @@ export const ACT = {
   PAGE: 'PAGE',
   THUMBS: 'THUMBS',
   PENDING_IMG: 'PENDING_IMG',
+  PANEL: 'PANEL',
+  FORM_SET: 'FORM_SET',
+  FORM_SEED: 'FORM_SEED',
+  OBJ_SEED: 'OBJ_SEED',
   HINT: 'HINT',
   BUSY: 'BUSY',
   RESET: 'RESET'
@@ -146,6 +152,14 @@ export function reducer(s, a) {
       return { ...s, currentPage: a.page }
     case ACT.THUMBS:
       return { ...s, thumbsOpen: !s.thumbsOpen }
+    case ACT.PANEL:
+      return { ...s, panel: a.panel, activeText: null, selection: null }
+    case ACT.FORM_SET:
+      return { ...s, formValues: { ...s.formValues, [a.key]: a.value }, dirty: true }
+    case ACT.FORM_SEED:
+      return { ...s, formValues: { ...a.values, ...s.formValues } }
+    case ACT.OBJ_SEED:
+      return withPage(s, a.page, p => ({ objects: [...a.objects, ...p.objects] }))
     case ACT.PENDING_IMG:
       return { ...s, pendingImage: a.img, hint: a.img ? 'Click anywhere on the page to place the image' : null, tool: a.img ? 'image' : 'select' }
     case ACT.HINT:
