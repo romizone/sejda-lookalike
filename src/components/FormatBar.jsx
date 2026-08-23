@@ -99,7 +99,7 @@ export default function FormatBar({ state, dispatch }) {
           <select
             className="fb-select"
             value={el.family || 'sans-serif'}
-            onChange={e => patch({ family: e.target.value })}
+            onChange={e => patch({ family: e.target.value, pdfFont: null })}
           >
             <option value="sans-serif">Helvetica / Sans</option>
             <option value="serif">Times / Serif</option>

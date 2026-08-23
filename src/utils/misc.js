@@ -39,16 +39,42 @@ export function sanitizeWinAnsi(t) {
 
 export const baseName = n => (n || 'document').replace(/\.pdf$/i, '')
 
-// Ascent/descent of the substitute web fonts, used to place a box so that its
-// first text line sits on the baseline the PDF actually uses.
-export const FONT_METRICS = {
-  serif: { asc: 0.891, desc: 0.216 },
-  'sans-serif': { asc: 0.905, desc: 0.212 },
-  monospace: { asc: 0.833, desc: 0.300 }
+// The css font list for a piece of text: the embedded face pdf.js loaded for
+// this document (registered as a FontFace named like "g_d0_f1" when the page
+// was rendered) in front of the generic family it maps to. Editing with the
+// document's own font is what keeps shape, size, width and position identical
+// when a line is clicked.
+export const fontCssOf = item =>
+  item && item.pdfFont ? `"${item.pdfFont}", ${famCss(item.family)}` : famCss(item && item.family)
+
+const FALLBACK_METRICS = { asc: 0.905, desc: 0.212 }
+const metricCache = new Map()
+let measureCtx = null
+
+// A text box is laid out from the metrics of the font the browser actually
+// resolved, so those are measured rather than assumed. A list whose first face
+// has not finished loading is measured fresh each call and only cached once it
+// has, so a late-arriving FontFace cannot freeze wrong numbers in.
+export function familyMetrics(familyCss) {
+  const hit = metricCache.get(familyCss)
+  if (hit) return hit
+  try {
+    if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d')
+    measureCtx.font = `100px ${familyCss}`
+    const m = measureCtx.measureText('Hg')
+    if (typeof m.fontBoundingBoxAscent === 'number') {
+      const v = { asc: m.fontBoundingBoxAscent / 100, desc: m.fontBoundingBoxDescent / 100 }
+      let settled = true
+      try { settled = document.fonts.check(`100px ${familyCss}`) } catch { settled = true }
+      if (settled) metricCache.set(familyCss, v)
+      return v
+    }
+  } catch { /* no DOM or no metrics API */ }
+  return FALLBACK_METRICS
 }
 
-export function topForBaseline(baselineY, fontSize, lineHeight, family) {
-  const m = FONT_METRICS[family] || FONT_METRICS['sans-serif']
+export function topForBaseline(baselineY, fontSize, lineHeight, familyCss) {
+  const m = familyMetrics(familyCss)
   const content = (m.asc + m.desc) * fontSize
   const half = ((lineHeight || fontSize * 1.2) - content) / 2
   return baselineY - (half + m.asc * fontSize)

@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { BASE_SCALE, famCss, uid, slackOf, topForBaseline } from '../utils/misc'
+import { BASE_SCALE, fontCssOf, uid, slackOf, topForBaseline } from '../utils/misc'
 import { sampleTextColor, sampleBgColor } from '../lib/colors'
 import { domToRuns, runsToHtml, runsText, isPlain } from '../lib/runs'
 
@@ -35,9 +35,10 @@ function LineBox({ ln, isActive, handlers }) {
   useSyncText(ref, ln, isActive)
   const fs = ln.fontSize
   const lh = ln.lineHeight || fs * 1.2
+  const fam = fontCssOf(ln)
   const st = {
     left: ln.x,
-    top: topForBaseline(ln.baselineY, fs, lh, ln.family),
+    top: topForBaseline(ln.baselineY, fs, lh, fam),
     width: ln.wrapW || ln.w + slackOf(ln.w),
     minHeight: Math.max(ln.rectH, fs * 1.2),
     fontSize: fs,
@@ -45,10 +46,12 @@ function LineBox({ ln, isActive, handlers }) {
     whiteSpace: 'pre-wrap',
     wordBreak: 'normal',
     overflowWrap: 'break-word',
-    fontFamily: famCss(ln.family)
+    fontFamily: fam
   }
-  if (ln.bold) st.fontWeight = 700
-  if (ln.italic) st.fontStyle = 'italic'
+  // An embedded face already carries its own weight and slant; synthesising
+  // them again on top would double the effect.
+  if (ln.bold && !ln.pdfFont) st.fontWeight = 700
+  if (ln.italic && !ln.pdfFont) st.fontStyle = 'italic'
   if (ln.underline) st.textDecoration = 'underline'
   if (isActive || ln.dirty) {
     st.color = ln.color || '#111111'
@@ -85,9 +88,10 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
     useSyncText(tRef, ob, isActive)
     const fs = ob.fontSize
     const lh = ob.lineHeight || fs * 1.2
+    const fam = fontCssOf(ob)
     const st = {
       left: ob.x,
-      top: topForBaseline(ob.baselineY ?? ob.y + fs * 0.8, fs, lh, ob.family),
+      top: topForBaseline(ob.baselineY ?? ob.y + fs * 0.8, fs, lh, fam),
       width: ob.w || 260,
       minWidth: 6,
       minHeight: fs * 1.2,
@@ -95,7 +99,7 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
       lineHeight: lh + 'px',
       whiteSpace: 'pre-wrap',
       overflowWrap: 'break-word',
-      fontFamily: famCss(ob.family),
+      fontFamily: fam,
       color: ob.color || '#111111'
     }
     if (ob.bold) st.fontWeight = 700

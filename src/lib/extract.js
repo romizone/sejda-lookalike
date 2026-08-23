@@ -52,6 +52,7 @@ export async function pageSegments(page, scale) {
       h: hy,
       asc,
       desc,
+      font: it.fontName || null,
       fam: normFam(st.fontFamily),
       bold: isBoldName(st.fontFamily),
       italic: isItalicName(st.fontFamily)
@@ -134,6 +135,7 @@ export async function extractLines(page, scale, pageNo) {
       asc: dom.asc,
       desc: dom.desc,
       family: dom.fam,
+      pdfFont: dom.font || null,
       bold: !!dom.bold,
       italic: !!dom.italic,
       wideGap,
@@ -232,6 +234,7 @@ function buildPara(ls, pageNo, pi) {
     asc: dom.asc,
     desc: dom.desc,
     family: dom.fam,
+    pdfFont: dom.pdfFont || null,
     bold: !!dom.bold,
     italic: !!dom.italic,
     wideGap: false,
