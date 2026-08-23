@@ -187,6 +187,7 @@ export default function App() {
 
     dispatch({ type: ACT.PUSH })
     let done = 0
+    let recognised = 0
     for (const { e } of targets) {
       const pdfPage = docRef.current.pagesMap?.[e.src]
       if (!pdfPage) { done++; continue }
@@ -197,8 +198,21 @@ export default function App() {
           pct: (done + inner) / targets.length
         })
       })
-      dispatch({ type: ACT.SET_LINES, page: e.key, lines })
+      // A page that reads as blank keeps whatever it already had, so a failed
+      // pass over one page cannot wipe text found on another.
+      if (lines.length) {
+        dispatch({ type: ACT.SET_LINES, page: e.key, lines })
+        recognised++
+      }
       done++
+    }
+
+    if (!recognised) {
+      throw new Error(
+        'No readable text was found. This usually means the page is a picture whose ' +
+        'writing is too small or too soft to make out — a sharper scan, or one page ' +
+        'per sheet rather than a whole web page squeezed onto one, gives it something to read.'
+      )
     }
   }
 

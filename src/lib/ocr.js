@@ -1,23 +1,38 @@
 import { BASE_SCALE, slackOf } from '../utils/misc'
 import { groupParagraphs } from './extract'
 
-// Tesseract wants roughly 300dpi; the page is re-rendered at its own scale for
-// recognition and the boxes are converted back to editor coordinates after.
-const OCR_SCALE = 3
+// Tesseract reads best around 300dpi. A whole web page captured onto one sheet
+// leaves glyphs only a few pixels tall, so the render is pushed as high as the
+// browser's canvas limits allow rather than fixed at a small multiple.
+const TARGET_DPI = 300
+const MAX_SIDE = 8000
+const MAX_AREA = 40e6
 
-async function renderForOcr(pdfPage) {
+function ocrScaleFor(pdfPage) {
+  const v1 = pdfPage.getViewport({ scale: 1, rotation: 0 })
+  const byDpi = TARGET_DPI / 72
+  const bySide = Math.min(MAX_SIDE / v1.width, MAX_SIDE / v1.height)
+  const byArea = Math.sqrt(MAX_AREA / (v1.width * v1.height))
+  return Math.max(1, Math.min(byDpi, bySide, byArea))
+}
+
+async function renderForOcr(pdfPage, scale) {
   // Same frame the editor works in, so the boxes come back usable and the text
   // is upright for pages whose rotation is only a display instruction.
-  const vp = pdfPage.getViewport({ scale: OCR_SCALE, rotation: 0 })
+  const vp = pdfPage.getViewport({ scale, rotation: 0 })
   const canvas = document.createElement('canvas')
   canvas.width = Math.floor(vp.width)
   canvas.height = Math.floor(vp.height)
-  await pdfPage.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise
+  if (!canvas.width || !canvas.height) throw new Error('This page is too large to render for recognition.')
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  await pdfPage.render({ canvasContext: ctx, viewport: vp }).promise
   return canvas
 }
 
-function toLines(data, pageKey) {
-  const k = BASE_SCALE / OCR_SCALE
+function toLines(data, pageKey, scale) {
+  const k = BASE_SCALE / scale
   const lines = []
   let i = 0
   for (const block of data.blocks || []) {
@@ -68,13 +83,23 @@ function toLines(data, pageKey) {
 
 export async function ocrPage(pdfPage, pageKey, langs, onProgress) {
   const { createWorker } = await import('tesseract.js')
-  const canvas = await renderForOcr(pdfPage)
+  const scale = ocrScaleFor(pdfPage)
+  const canvas = await renderForOcr(pdfPage, scale)
   const worker = await createWorker(langs, 1, {
     logger: onProgress ? m => onProgress(m) : undefined
   })
   try {
-    const { data } = await worker.recognize(canvas, {}, { blocks: true, text: false })
-    return groupParagraphs(toLines(data, pageKey), pageKey)
+    let data
+    try {
+      ;({ data } = await worker.recognize(canvas, {}, { blocks: true, text: false }))
+    } catch (err) {
+      // When Tesseract recognises nothing its JSON output is an empty string,
+      // and tesseract.js parses it without checking. That is a blank result,
+      // not a failure worth aborting the whole run for.
+      if (err instanceof SyntaxError) return []
+      throw err
+    }
+    return groupParagraphs(toLines(data, pageKey, scale), pageKey)
   } finally {
     try { await worker.terminate() } catch {}
   }
