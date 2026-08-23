@@ -1,3 +1,5 @@
+import { slackOf } from '../utils/misc'
+
 function mul(m1, m2) {
   return [
     m1[0] * m2[0] + m1[2] * m2[1],
@@ -44,7 +46,11 @@ export async function extractLines(page, scale, pageNo) {
     })
   })
 
-  segs.sort((a, b) => (b.y - a.y) || (a.x - b.x))
+  // Reading order: top of the page first. The viewport transform puts y in
+  // canvas space (growing downwards), so this must be ascending. Sorting the
+  // other way round leaves the array bottom-to-top and every downstream step
+  // that compares a line with the one that follows it silently breaks.
+  segs.sort((a, b) => (a.y - b.y) || (a.x - b.x))
 
   const groups = []
   let cur = null
@@ -64,13 +70,19 @@ export async function extractLines(page, scale, pageNo) {
   const lines = []
   let li = 0
   for (const g of groups) {
-    const ss = g.segs.slice().sort((a, b) => a.x - b.x)
+    // pdf.js emits synthetic whitespace-only items to represent horizontal
+    // gaps. Keeping them would hide the real distance between two runs, so the
+    // spacing is rebuilt from geometry over the solid runs only.
+    const ss = g.segs.filter(s => s.str.trim()).sort((a, b) => a.x - b.x)
+    if (!ss.length) continue
     let text = ''
     let pen = null
+    let wideGap = false
     for (const s of ss) {
       if (pen) {
         const gap = s.x - (pen.x + pen.w)
-        if (gap > pen.h * 0.15 && gap < pen.h * 1.8 && !/\s$/.test(text) && !/^\s/.test(s.str)) text += ' '
+        if (gap > Math.max(pen.h, s.h) * 1.4) wideGap = true
+        if (gap > pen.h * 0.12 && !/\s$/.test(text) && !/^\s/.test(s.str)) text += ' '
       }
       text += s.str
       pen = s
@@ -85,21 +97,26 @@ export async function extractLines(page, scale, pageNo) {
     const wsum = ss.reduce((a, s) => a + s.str.length, 0) || 1
     const fs = ss.reduce((a, s) => a + s.h * s.str.length, 0) / wsum
     const rectH = Math.max(bot - top, fs * 1.05, fs + fs * (-dom.desc))
+    const w = Math.max(xe - x, 6)
     lines.push({
       id: `L${pageNo}_${li++}`,
       text: trimmed,
       x,
-      w: Math.max(xe - x, 6),
+      w,
+      wrapW: w + slackOf(w),
       baselineY: dom.y,
+      lineHeight: Math.round(rectH),
       rectH,
       fontSize: fs,
       asc: dom.asc,
       desc: dom.desc,
       family: dom.fam,
+      wideGap,
       rect: { x: x - 1, y: top - 1, w: (xe - x) + 2, h: rectH + 2 },
       dirty: false,
       deleted: false,
       color: null,
+      bg: null,
       bold: false,
       italic: false,
       underline: false
@@ -119,19 +136,24 @@ function groupParagraphs(lines, pageNo) {
   let cur = []
   const flush = () => {
     if (!cur.length) return
-    paras.push(buildPara(cur, pageNo, paras.length))
+    paras.push(cur.length === 1 ? cur[0] : buildPara(cur, pageNo, paras.length))
     cur = []
   }
   for (const ln of lines) {
     if (!cur.length) { cur = [ln]; continue }
     const L = cur[cur.length - 1]
     const gap = ln.baselineY - L.baselineY
-    const lh = L.rectH
+    const lh = Math.max(L.rectH, L.fontSize * 1.05)
+    const ratio = gap / lh
+    // Loose leading plus a finished sentence is what separates list items and
+    // stacked one-liners from the lines of a single wrapped paragraph.
+    const listy = ratio > 1.3 && /[.!?:;]["')\]]?\s*$/.test(L.text) && /^[A-Z0-9\u2022(\-\u2013\u2014]/.test(ln.text)
     const ok =
+      !L.wideGap && !ln.wideGap && !listy &&
       ln.family === L.family &&
       Math.abs(ln.fontSize - L.fontSize) <= Math.max(1, 0.22 * L.fontSize) &&
-      gap > lh * 0.55 &&
-      gap < lh * 1.7 &&
+      ratio > 0.55 &&
+      ratio < 1.75 &&
       overlapPct(L, ln) > 0.3
     if (ok) cur.push(ln)
     else { flush(); cur = [ln] }
@@ -140,16 +162,27 @@ function groupParagraphs(lines, pageNo) {
   return paras
 }
 
+// A paragraph is stored as one flowing string, not as the original hard line
+// breaks, so that typing re-wraps the whole paragraph the way a word processor
+// would instead of stretching a single line over its neighbour.
+function joinFlowing(ls) {
+  let out = ''
+  for (let i = 0; i < ls.length; i++) {
+    const t = ls[i].text
+    if (i === 0) { out = t; continue }
+    if (/[\p{Ll}]-$/u.test(out) && /^[\p{Ll}]/u.test(t)) out = out.slice(0, -1) + t
+    else out += ' ' + t
+  }
+  return out
+}
+
 function buildPara(ls, pageNo, pi) {
   const wsum = ls.reduce((s, l) => s + l.text.length, 0) || 1
   const fs = ls.reduce((s, l) => s + l.fontSize * l.text.length, 0) / wsum
-  let lh = ls[0].rectH
-  if (ls.length > 1) {
-    const gaps = []
-    for (let i = 1; i < ls.length; i++) gaps.push(ls[i].baselineY - ls[i - 1].baselineY)
-    gaps.sort((a, b) => a - b)
-    lh = gaps[Math.floor(gaps.length / 2)]
-  }
+  const gaps = []
+  for (let i = 1; i < ls.length; i++) gaps.push(ls[i].baselineY - ls[i - 1].baselineY)
+  gaps.sort((a, b) => a - b)
+  let lh = gaps[Math.floor(gaps.length / 2)]
   lh = Math.min(Math.max(lh, fs * 0.95), fs * 1.8)
   const x = Math.min(...ls.map(l => l.x))
   const xe = Math.max(...ls.map(l => l.x + l.w))
@@ -158,11 +191,15 @@ function buildPara(ls, pageNo, pi) {
   const ry = Math.min(...ls.map(l => l.rect.y))
   const re = Math.max(...ls.map(l => l.rect.x + l.rect.w))
   const rb = Math.max(...ls.map(l => l.rect.y + l.rect.h))
+  const w = Math.max(xe - x, 6)
   return {
     id: `P${pageNo}_${pi}`,
-    text: ls.map(l => l.text).join('\n'),
+    text: joinFlowing(ls),
     x,
-    w: Math.max(xe - x, 6),
+    w,
+    // Wrap at the column the paragraph already occupies, so re-flowed text
+    // keeps the original block shape instead of running past the margin.
+    wrapW: w + 2,
     baselineY: ls[0].baselineY,
     lineHeight: lh,
     rectH: rb - ry,
@@ -170,10 +207,12 @@ function buildPara(ls, pageNo, pi) {
     asc: dom.asc,
     desc: dom.desc,
     family: dom.fam,
+    wideGap: false,
     rect: { x: rx, y: ry, w: re - rx, h: rb - ry },
     dirty: false,
     deleted: false,
     color: null,
+    bg: null,
     bold: false,
     italic: false,
     underline: false

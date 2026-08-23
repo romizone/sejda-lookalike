@@ -195,6 +195,7 @@ input, select { font-family: inherit; color: inherit; }
 .overlay.tool-whiteout, .overlay.tool-rect, .overlay.tool-ellipse, .overlay.tool-line { cursor: crosshair; }
 
 /* text lines */
+.pline-patch { position: absolute; z-index: 1; pointer-events: none; }
 .pline {
   position: absolute;
   white-space: pre;

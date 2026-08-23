@@ -39,3 +39,18 @@ export function sanitizeWinAnsi(t) {
 }
 
 export const baseName = n => (n || 'document').replace(/\.pdf$/i, '')
+
+// Ascent/descent of the substitute web fonts, used to place a box so that its
+// first text line sits on the baseline the PDF actually uses.
+export const FONT_METRICS = {
+  serif: { asc: 0.891, desc: 0.216 },
+  'sans-serif': { asc: 0.905, desc: 0.212 },
+  monospace: { asc: 0.833, desc: 0.300 }
+}
+
+export function topForBaseline(baselineY, fontSize, lineHeight, family) {
+  const m = FONT_METRICS[family] || FONT_METRICS['sans-serif']
+  const content = (m.asc + m.desc) * fontSize
+  const half = ((lineHeight || fontSize * 1.2) - content) / 2
+  return baselineY - (half + m.asc * fontSize)
+}

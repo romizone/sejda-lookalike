@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { BASE_SCALE, famCss, uid, slackOf } from '../utils/misc'
-import { sampleTextColor } from '../lib/colors'
+import { BASE_SCALE, famCss, uid, slackOf, topForBaseline } from '../utils/misc'
+import { sampleTextColor, sampleBgColor } from '../lib/colors'
 
 function useSyncText(ref, text, isActive) {
   useLayoutEffect(() => {
@@ -16,14 +16,14 @@ function LineBox({ ln, isActive, handlers }) {
   const ref = useRef(null)
   useSyncText(ref, ln.text, isActive)
   const fs = ln.fontSize
+  const lh = ln.lineHeight || fs * 1.2
   const st = {
     left: ln.x,
-    top: ln.baselineY - ln.asc * fs,
-    width: ln.w + slackOf(ln.w),
-    minWidth: Math.max(ln.w, 8),
+    top: topForBaseline(ln.baselineY, fs, lh, ln.family),
+    width: ln.wrapW || ln.w + slackOf(ln.w),
     minHeight: Math.max(ln.rectH, fs * 1.2),
     fontSize: fs,
-    lineHeight: (ln.lineHeight || fs * 1.2) + 'px',
+    lineHeight: lh + 'px',
     whiteSpace: 'pre-wrap',
     wordBreak: 'normal',
     overflowWrap: 'break-word',
@@ -34,7 +34,7 @@ function LineBox({ ln, isActive, handlers }) {
   if (ln.underline) st.textDecoration = 'underline'
   if (isActive || ln.dirty) {
     st.color = ln.color || '#111111'
-    st.background = '#fff'
+    st.background = ln.bg || '#fff'
   }
   return (
     <div
@@ -48,7 +48,7 @@ function LineBox({ ln, isActive, handlers }) {
       onFocus={handlers.onFocus}
       onBlur={handlers.onBlur}
       onInput={handlers.onInput}
-      onKeyDown={handlers.onKeyDown}
+      onKeyDown={e => handlers.onKeyDown(e, ln, 'line')}
       onPaste={handlers.onPaste}
     />
   )
@@ -66,14 +66,15 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
     const tRef = useRef(null)
     useSyncText(tRef, ob.text, isActive)
     const fs = ob.fontSize
+    const lh = ob.lineHeight || fs * 1.2
     const st = {
       left: ob.x,
-      top: (ob.baselineY ?? ob.y + fs * 0.8) - fs * 0.8,
+      top: topForBaseline(ob.baselineY ?? ob.y + fs * 0.8, fs, lh, ob.family),
       width: ob.w || 260,
       minWidth: 6,
       minHeight: fs * 1.2,
       fontSize: fs,
-      lineHeight: (ob.lineHeight || fs * 1.2) + 'px',
+      lineHeight: lh + 'px',
       whiteSpace: 'pre-wrap',
       overflowWrap: 'break-word',
       fontFamily: famCss(ob.family),
@@ -94,7 +95,7 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
         onFocus={handlers.onFocus}
         onBlur={handlers.onBlur}
         onInput={handlers.onInputObj}
-        onKeyDown={handlers.onKeyDown}
+        onKeyDown={e => handlers.onKeyDown(e, ob, 'obj')}
         onPaste={handlers.onPaste}
       />
     )
@@ -169,6 +170,65 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
   )
 }
 
+/* ---------- caret helpers ---------- */
+
+function caretInfo(el) {
+  const s = window.getSelection()
+  if (!s || !s.rangeCount) return null
+  const r = s.getRangeAt(0)
+  if (!el.contains(r.startContainer)) return null
+  const pre = document.createRange()
+  pre.selectNodeContents(el)
+  pre.setEnd(r.startContainer, r.startOffset)
+  const post = document.createRange()
+  post.selectNodeContents(el)
+  post.setStart(r.endContainer, r.endOffset)
+  let rect = r.getClientRects()[0] || r.getBoundingClientRect()
+  if (!rect || (!rect.height && !rect.top)) rect = el.getBoundingClientRect()
+  return {
+    collapsed: s.isCollapsed,
+    before: pre.toString().length,
+    after: post.toString().replace(/\n$/, '').length,
+    rect
+  }
+}
+
+function setCaretAt(el, offset) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  let node = null
+  let local = 0
+  let acc = 0
+  let n
+  while ((n = walker.nextNode())) {
+    const len = n.nodeValue.length
+    if (acc + len >= offset) { node = n; local = offset - acc; break }
+    acc += len
+  }
+  const r = document.createRange()
+  if (node) r.setStart(node, local)
+  else { r.selectNodeContents(el); r.collapse(false) }
+  r.collapse(true)
+  const s = window.getSelection()
+  s.removeAllRanges()
+  s.addRange(r)
+}
+
+function caretFromPoint(el, pt) {
+  let range = null
+  if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(pt.x, pt.y)
+  else if (document.caretPositionFromPoint) {
+    const cp = document.caretPositionFromPoint(pt.x, pt.y)
+    if (cp) { range = document.createRange(); range.setStart(cp.offsetNode, cp.offset) }
+  }
+  if (range && el.contains(range.startContainer)) {
+    const s = window.getSelection()
+    s.removeAllRanges()
+    s.addRange(range)
+    return true
+  }
+  return false
+}
+
 export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeText, selection, pendingImage, dispatch, ACT, docRef }) {
   const holderRef = useRef(null)
   const overlayRef = useRef(null)
@@ -177,10 +237,14 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
   const [band, setBand] = useState(null)
   const bandRef = useRef(null)
   const pendingPointRef = useRef(null)
+  const pendingCaretRef = useRef(null)
 
   const dims = docRef.pageDims?.[idx] || { w: 595 * BASE_SCALE, h: 842 * BASE_SCALE }
   const W = dims.w
   const H = dims.h
+
+  const liveLines = (pageState?.lines || []).filter(l => !l.deleted)
+  const deadLines = (pageState?.lines || []).filter(l => l.deleted)
 
   useEffect(() => {
     const el = holderRef.current
@@ -229,30 +293,27 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
   useEffect(() => {
     if (!activeText || activeText.page !== idx) return
     const el = overlayRef.current?.querySelector(`[data-id="${activeText.id}"]`)
-    if (el && !el.contains(document.activeElement)) {
-      el.focus()
-      const pp = pendingPointRef.current
-      if (pp) {
-        let range = null
-        if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(pp.x, pp.y)
-        else if (document.caretPositionFromPoint) {
-          const cp = document.caretPositionFromPoint(pp.x, pp.y)
-          if (cp) { range = document.createRange(); range.setStart(cp.offsetNode, cp.offset) }
+    if (el) {
+      if (document.activeElement !== el) el.focus()
+      const pc = pendingCaretRef.current
+      if (pc && pc.id === activeText.id) {
+        pendingCaretRef.current = null
+        setCaretAt(el, pc.offset)
+      } else {
+        const pp = pendingPointRef.current
+        if (pp) {
+          pendingPointRef.current = null
+          caretFromPoint(el, pp)
         }
-        if (range && el.contains(range.startContainer)) {
-          const s = window.getSelection()
-          s.removeAllRanges()
-          s.addRange(range)
-        }
-        pendingPointRef.current = null
       }
     }
     if (activeText.kind === 'line') {
-      const p = pageState
-      const ln = p?.lines.find(l => l.id === activeText.id)
-      if (ln && !ln.color) {
-        const c = sampleTextColor(docRef.canvases[idx], ln.rect, docRef.dpr || 1)
-        if (c) dispatch({ type: ACT.TEXT_META, page: idx, kind: 'line', id: ln.id, patch: { color: c } })
+      const ln = pageState?.lines.find(l => l.id === activeText.id)
+      if (ln && (!ln.color || !ln.bg)) {
+        const patch = {}
+        if (!ln.color) patch.color = sampleTextColor(docRef.canvases[idx], ln.rect, docRef.dpr || 1)
+        if (!ln.bg) patch.bg = sampleBgColor(docRef.canvases[idx], ln.rect, docRef.dpr || 1)
+        if (patch.color || patch.bg) dispatch({ type: ACT.TEXT_META, page: idx, kind: 'line', id: ln.id, patch })
       }
     }
   }, [activeText, idx])
@@ -340,7 +401,112 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
   const lineInputHandlers = makeInputHandlers('line')
   const objInputHandlers = makeInputHandlers('obj')
 
-  const onKeyDown = () => {}
+  /* ---------- keyboard: move, join and split across text blocks ---------- */
+
+  const lineIndexOf = id => liveLines.findIndex(l => l.id === id)
+
+  const moveCaretToSibling = (dir, ln, ci) => {
+    const i = lineIndexOf(ln.id)
+    if (i < 0) return false
+    const target = liveLines[i + dir]
+    if (!target) return false
+    const tEl = overlayRef.current?.querySelector(`[data-id="${target.id}"]`)
+    if (!tEl) return false
+    const tr = tEl.getBoundingClientRect()
+    const lh = Math.min(ci.rect.height || 14, tr.height)
+    const y = dir > 0 ? tr.top + lh / 2 : tr.bottom - lh / 2
+    pendingPointRef.current = { x: ci.rect.left, y }
+    pendingCaretRef.current = null
+    dispatch({ type: ACT.TEXT_ACTIVATE, target: { kind: 'line', page: idx, id: target.id } })
+    return true
+  }
+
+  // A merged-away line is unmounted, so nothing would hide the pixels it left
+  // on the rendered page; remember its background before it goes.
+  const ensureBg = ln => {
+    if (ln.bg) return
+    const bg = sampleBgColor(docRef.canvases[idx], ln.rect, docRef.dpr || 1)
+    if (bg) dispatch({ type: ACT.TEXT_META, page: idx, kind: 'line', id: ln.id, patch: { bg } })
+  }
+
+  const joinWithPrev = ln => {
+    const i = lineIndexOf(ln.id)
+    if (i <= 0) return false
+    const prev = liveLines[i - 1]
+    const glue = prev.text && ln.text && !/\s$/.test(prev.text) && !/^\s/.test(ln.text) ? ' ' : ''
+    push()
+    ensureBg(ln)
+    pendingCaretRef.current = { id: prev.id, offset: prev.text.length + glue.length }
+    dispatch({ type: ACT.TEXT_MERGE, page: idx, dstId: prev.id, srcId: ln.id, text: prev.text + glue + ln.text })
+    return true
+  }
+
+  const joinWithNext = (el, ln) => {
+    const i = lineIndexOf(ln.id)
+    if (i < 0 || i >= liveLines.length - 1) return false
+    const next = liveLines[i + 1]
+    const glue = ln.text && next.text && !/\s$/.test(ln.text) && !/^\s/.test(next.text) ? ' ' : ''
+    const merged = ln.text + glue + next.text
+    const caret = ln.text.length
+    push()
+    ensureBg(next)
+    dispatch({ type: ACT.TEXT_MERGE, page: idx, dstId: ln.id, srcId: next.id, text: merged })
+    // The box keeps focus, so React will not re-sync its text for us.
+    el.textContent = merged
+    setCaretAt(el, caret)
+    return true
+  }
+
+  const onKeyDown = (e, item, kind) => {
+    const el = e.currentTarget
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      document.execCommand('insertLineBreak')
+      return
+    }
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if (kind !== 'line') return
+
+    const ci = caretInfo(el)
+    if (!ci) return
+
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      const box = el.getBoundingClientRect()
+      const lh = ci.rect.height || 14
+      const atFirst = ci.rect.top - box.top < lh * 0.6
+      const atLast = box.bottom - ci.rect.bottom < lh * 0.6
+      if (e.key === 'ArrowUp' && atFirst && moveCaretToSibling(-1, item, ci)) e.preventDefault()
+      else if (e.key === 'ArrowDown' && atLast && moveCaretToSibling(1, item, ci)) e.preventDefault()
+      return
+    }
+    if (e.key === 'ArrowLeft' && ci.collapsed && ci.before === 0) {
+      const i = lineIndexOf(item.id)
+      const prev = liveLines[i - 1]
+      if (prev) {
+        e.preventDefault()
+        pendingCaretRef.current = { id: prev.id, offset: prev.text.length }
+        dispatch({ type: ACT.TEXT_ACTIVATE, target: { kind: 'line', page: idx, id: prev.id } })
+      }
+      return
+    }
+    if (e.key === 'ArrowRight' && ci.collapsed && ci.after === 0) {
+      const i = lineIndexOf(item.id)
+      const next = liveLines[i + 1]
+      if (next) {
+        e.preventDefault()
+        pendingCaretRef.current = { id: next.id, offset: 0 }
+        dispatch({ type: ACT.TEXT_ACTIVATE, target: { kind: 'line', page: idx, id: next.id } })
+      }
+      return
+    }
+    if (e.key === 'Backspace' && ci.collapsed && ci.before === 0) {
+      if (joinWithPrev(item)) e.preventDefault()
+      return
+    }
+    if (e.key === 'Delete' && ci.collapsed && ci.after === 0) {
+      if (joinWithNext(el, item)) e.preventDefault()
+    }
+  }
 
   const onPaste = e => {
     e.preventDefault()
@@ -447,7 +613,14 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
         <div className="page" style={{ width: W, height: H, zoom }}>
           <canvas ref={canvasRef} className="pgcanvas" />
           <div ref={overlayRef} className={`overlay tool-${tool}`} onPointerDown={onOverlayDown}>
-            {(pageState?.lines || []).filter(ln => !ln.deleted).map(ln => (
+            {deadLines.map(ln => (
+              <div
+                key={ln.id}
+                className="pline-patch"
+                style={{ left: ln.rect.x, top: ln.rect.y, width: ln.rect.w, height: ln.rect.h, background: ln.bg || '#fff' }}
+              />
+            ))}
+            {liveLines.map(ln => (
               <LineBox key={ln.id} ln={ln} isActive={!!(activeText && activeText.kind === 'line' && activeText.id === ln.id)} handlers={handlers} />
             ))}
             {(pageState?.objects || []).map(ob => (

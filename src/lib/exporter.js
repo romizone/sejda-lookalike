@@ -35,13 +35,16 @@ async function convertToPng(doc, src) {
 export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr = 1 }) {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
+  // embedFont resolves asynchronously; using the promise as if it were the
+  // font makes every measurement and drawText throw, which the surrounding
+  // try/catch used to swallow - the old text got covered and the new text was
+  // never written.
   const cache = new Map()
-  const getFont = (fam, b, i) => {
+  const getFont = async (fam, b, i) => {
     const list = STD[fam] || STD['sans-serif']
     const name = list[(b ? 1 : 0) + (i ? 2 : 0)]
-    let f = cache.get(name)
-    if (!f) { f = doc.embedFont(name); cache.set(name, f) }
-    return f
+    if (!cache.has(name)) cache.set(name, await doc.embedFont(name))
+    return cache.get(name)
   }
 
   const pageCount = doc.getPageCount()
@@ -53,48 +56,40 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
     const k = 1 / baseScale
     const X = v => v * k
     const Y = v => PH - v * k
-    const white = rgb(1, 1, 1)
 
-    const cover = r => {
+    const cover = (r, hex) => {
+      const c = hexToRgb01(hex || '#ffffff')
       page.drawRectangle({
         x: X(r.x) - 1, y: Y(r.y + r.h) - 1,
         width: r.w * k + 2, height: r.h * k + 2,
-        color: white
+        color: rgb(c.r, c.g, c.b)
       })
     }
 
-    for (const o of pe.objects) {
-      if (o.kind === 'whiteout') cover(o)
-    }
-    for (const ln of pe.lines) {
-      if (ln.deleted || ln.dirty) cover(ln.rect)
+    const wrapWidthOf = o => {
+      if (o.wrapW) return o.wrapW * k
+      return o.w ? (o.w + slackOf(o.w)) * k : Infinity
     }
 
-    const put = (text, o) => {
+    // Break the text the same way the on-screen box does, so what the editor
+    // shows and what lands in the file agree.
+    const layoutRows = async (text, o) => {
       const t = sanitizeWinAnsi(text ?? '')
-      if (!t.trim()) return
-      const font = getFont(o.family || 'sans-serif', !!o.bold, !!o.italic)
+      const font = await getFont(o.family || 'sans-serif', !!o.bold, !!o.italic)
       const size = Math.max(2, (o.fontSize || 12) * k)
-      const col = hexToRgb01(o.color || '#111111')
-      const color = rgb(col.r, col.g, col.b)
-      const x0 = X(o.x)
-      const step = ((o.lineHeight || (o.fontSize || 12) * 1.25)) * k
-      let y0 = Y(o.baselineY ?? o.y)
-      const boxW = o.w ? (o.w + slackOf(o.w)) * k : Infinity
-
+      const boxW = wrapWidthOf(o)
+      const measure = str => {
+        try { return font.widthOfTextAtSize(str, size) } catch { return str.length * size * 0.5 }
+      }
       const rows = []
       for (const raw of t.split('\n')) {
         if (!raw) { rows.push(''); continue }
-        let width = 0
-        try { width = font.widthOfTextAtSize(raw, size) } catch { width = raw.length * size * 0.5 }
-        if (width <= boxW) { rows.push(raw); continue }
+        if (measure(raw) <= boxW) { rows.push(raw); continue }
         const words = raw.split(/(\s+)/)
         let line = ''
         for (let wi = 0; wi < words.length; wi++) {
           const cand = line + words[wi]
-          let cw = 0
-          try { cw = font.widthOfTextAtSize(cand, size) } catch { cw = cand.length * size * 0.5 }
-          if (cw > boxW && line.trim()) {
+          if (measure(cand) > boxW && line.trim()) {
             rows.push(line.replace(/\s+$/, ''))
             line = words[wi].replace(/^\s+/, '')
           } else {
@@ -103,7 +98,15 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
         }
         if (line.trim() || rows[rows.length - 1]) rows.push(line)
       }
+      return { rows, font, size }
+    }
 
+    const drawRows = (o, { rows, font, size }) => {
+      const col = hexToRgb01(o.color || '#111111')
+      const color = rgb(col.r, col.g, col.b)
+      const x0 = X(o.x)
+      const step = (o.lineHeight || (o.fontSize || 12) * 1.25) * k
+      const y0 = Y(o.baselineY ?? o.y)
       rows.forEach((row, i) => {
         if (!row) return
         const yy = y0 - i * step
@@ -120,15 +123,40 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
       })
     }
 
+    const dirtyLines = pe.lines.filter(l => !l.deleted && l.dirty)
+    const layouts = new Map()
+    for (const ln of dirtyLines) layouts.set(ln.id, await layoutRows(ln.text, ln))
+
+    // Re-flowed text can end up taller than the block it replaces; grow the
+    // patch to match so nothing from the original bleeds through underneath.
+    const patchRect = ln => {
+      const lay = layouts.get(ln.id)
+      const r = { ...ln.rect }
+      if (!lay) return r
+      const step = ln.lineHeight || ln.fontSize * 1.25
+      const bottom = (ln.baselineY ?? ln.y) + Math.max(0, lay.rows.length - 1) * step + ln.fontSize * 0.3
+      r.h = Math.max(r.h, bottom - r.y)
+      return r
+    }
+
+    for (const o of pe.objects) {
+      if (o.kind === 'whiteout') cover(o, '#ffffff')
+    }
     for (const ln of pe.lines) {
-      if (ln.deleted || !ln.dirty) continue
+      if (ln.deleted) cover(ln.rect, ln.bg)
+      else if (ln.dirty) cover(patchRect(ln), ln.bg)
+    }
+
+    for (const ln of dirtyLines) {
       if (!ln.color) ln.color = sampleTextColor(canvases?.[pi], ln.rect, dpr) || '#111111'
-      put(ln.text, ln)
+      const lay = layouts.get(ln.id)
+      if (lay && lay.rows.some(r => r.trim())) drawRows(ln, lay)
     }
 
     for (const o of pe.objects) {
       if (o.kind === 'text') {
-        put(o.text, { ...o, x: o.x, baselineY: o.baselineY })
+        const lay = await layoutRows(o.text, o)
+        if (lay.rows.some(r => r.trim())) drawRows(o, lay)
       } else if (o.kind === 'image') {
         await embedImage(doc, page, o, X, Y, k)
       } else if (o.kind === 'rect') {

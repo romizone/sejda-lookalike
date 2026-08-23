@@ -34,6 +34,7 @@ export const ACT = {
   TEXT_DEACTIVATE: 'TEXT_DEACTIVATE',
   TEXT_PATCH: 'TEXT_PATCH',
   TEXT_META: 'TEXT_META',
+  TEXT_MERGE: 'TEXT_MERGE',
   OBJ_ADD: 'OBJ_ADD',
   OBJ_PATCH: 'OBJ_PATCH',
   OBJ_REMOVE: 'OBJ_REMOVE',
@@ -106,6 +107,16 @@ export function reducer(s, a) {
         lines: p.lines.map(ln => (a.kind === 'line' && ln.id === a.id ? { ...ln, ...a.patch } : ln)),
         objects: p.objects.map(o => (a.kind === 'obj' && o.id === a.id ? { ...o, ...a.patch } : o))
       }))
+    case ACT.TEXT_MERGE: {
+      const st = withPage(s, a.page, p => ({
+        lines: p.lines.map(ln => {
+          if (ln.id === a.dstId) return { ...ln, text: a.text, dirty: true }
+          if (ln.id === a.srcId) return { ...ln, deleted: true, dirty: true }
+          return ln
+        })
+      }))
+      return { ...st, dirty: true, activeText: { kind: 'line', page: a.page, id: a.dstId } }
+    }
     case ACT.OBJ_ADD:
       return {
         ...withPage(s, a.page, p => ({ objects: [...p.objects, a.obj] })),
