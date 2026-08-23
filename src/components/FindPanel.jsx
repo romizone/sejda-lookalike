@@ -3,26 +3,31 @@ import { ACT } from '../store'
 
 const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-function matchesIn(pages, needle, caseSensitive) {
+// Pages are keyed by page-order entry, which is not a number once a blank page
+// has been inserted, so the walk follows the order rather than the key names.
+function matchesIn(pages, order, needle, caseSensitive) {
   if (!needle) return []
   const re = new RegExp(escape(needle), caseSensitive ? 'g' : 'gi')
   const out = []
-  Object.keys(pages).map(Number).sort((a, b) => a - b).forEach(pi => {
-    for (const ln of pages[pi].lines) {
+  order.forEach((entry, pos) => {
+    const pi = entry.key
+    const page = pages[pi]
+    if (!page) return
+    for (const ln of page.lines) {
       if (ln.deleted) continue
       re.lastIndex = 0
       let m
       while ((m = re.exec(ln.text))) {
-        out.push({ page: pi, id: ln.id, index: m.index })
+        out.push({ page: pi, pos, id: ln.id, index: m.index })
         if (m.index === re.lastIndex) re.lastIndex++
       }
     }
-    for (const ob of pages[pi].objects) {
+    for (const ob of page.objects) {
       if (ob.kind !== 'text') continue
       re.lastIndex = 0
       let m
       while ((m = re.exec(ob.text || ''))) {
-        out.push({ page: pi, id: ob.id, kind: 'obj', index: m.index })
+        out.push({ page: pi, pos, id: ob.id, kind: 'obj', index: m.index })
         if (m.index === re.lastIndex) re.lastIndex++
       }
     }
@@ -37,8 +42,8 @@ export default function FindPanel({ state, dispatch, onGoTo }) {
   const [cursor, setCursor] = useState(0)
 
   const hits = useMemo(
-    () => matchesIn(state.pages, needle, caseSensitive),
-    [state.pages, needle, caseSensitive]
+    () => matchesIn(state.pages, state.pageOrder, needle, caseSensitive),
+    [state.pages, state.pageOrder, needle, caseSensitive]
   )
 
   const close = () => dispatch({ type: ACT.PANEL, panel: null })
@@ -48,7 +53,7 @@ export default function FindPanel({ state, dispatch, onGoTo }) {
     const next = (cursor + dir + hits.length) % hits.length
     setCursor(next)
     const h = hits[next]
-    onGoTo(h.page)
+    onGoTo(h.pos)
     dispatch({
       type: ACT.TEXT_ACTIVATE,
       target: { kind: h.kind === 'obj' ? 'obj' : 'line', page: h.page, id: h.id }

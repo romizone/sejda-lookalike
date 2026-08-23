@@ -5,6 +5,7 @@ export const initialState = {
   fileName: '',
   numPages: 0,
   pages: {},
+  pageOrder: [],
   tool: 'select',
   activeText: null,
   selection: null,
@@ -43,6 +44,7 @@ export const ACT = {
   SELECT: 'SELECT',
   ZOOM: 'ZOOM',
   PAGE: 'PAGE',
+  PAGES_SET: 'PAGES_SET',
   THUMBS: 'THUMBS',
   PENDING_IMG: 'PENDING_IMG',
   PANEL: 'PANEL',
@@ -71,7 +73,8 @@ export function reducer(s, a) {
         phase: 'editor',
         fileName: a.fileName,
         numPages: a.numPages,
-        pages: Object.fromEntries(Array.from({ length: a.numPages }, (_, i) => [i, { lines: [], objects: [] }]))
+        pages: Object.fromEntries(Array.from({ length: a.numPages }, (_, i) => [i, { lines: [], objects: [] }])),
+        pageOrder: Array.from({ length: a.numPages }, (_, i) => ({ key: i, src: i, rotate: 0 }))
       }
     case ACT.OPEN_FAIL:
       return { ...initialState, phase: 'landing', error: a.error }
@@ -81,16 +84,23 @@ export function reducer(s, a) {
       return withPage(s, a.page, p => ({ lines: a.lines }))
     case ACT.SET_TOOL:
       return { ...s, tool: a.tool, selection: null }
-    case ACT.PUSH:
-      if (s.past[s.past.length - 1] === s.pages) return s
-      return { ...s, past: [...s.past.slice(-59), s.pages], future: [] }
+    case ACT.PUSH: {
+      const top = s.past[s.past.length - 1]
+      const snap = { pages: s.pages, pageOrder: s.pageOrder, formValues: s.formValues }
+      if (top && top.pages === snap.pages && top.pageOrder === snap.pageOrder && top.formValues === snap.formValues) return s
+      return { ...s, past: [...s.past.slice(-59), snap], future: [] }
+    }
     case ACT.UNDO: {
       if (!s.past.length) return s
-      return { ...s, pages: s.past[s.past.length - 1], past: s.past.slice(0, -1), future: [s.pages, ...s.future].slice(0, 60), activeText: null, selection: null }
+      const snap = s.past[s.past.length - 1]
+      const now = { pages: s.pages, pageOrder: s.pageOrder, formValues: s.formValues }
+      return { ...s, ...snap, past: s.past.slice(0, -1), future: [now, ...s.future].slice(0, 60), activeText: null, selection: null }
     }
     case ACT.REDO: {
       if (!s.future.length) return s
-      return { ...s, pages: s.future[0], future: s.future.slice(1), past: [...s.past, s.pages].slice(-60), activeText: null, selection: null }
+      const snap = s.future[0]
+      const now = { pages: s.pages, pageOrder: s.pageOrder, formValues: s.formValues }
+      return { ...s, ...snap, future: s.future.slice(1), past: [...s.past, now].slice(-60), activeText: null, selection: null }
     }
     case ACT.UNDO_REVERT: {
       if (!s.past.length) return s
@@ -116,7 +126,7 @@ export function reducer(s, a) {
     case ACT.TEXT_MERGE: {
       const st = withPage(s, a.page, p => ({
         lines: p.lines.map(ln => {
-          if (ln.id === a.dstId) return { ...ln, text: a.text, dirty: true }
+          if (ln.id === a.dstId) return { ...ln, text: a.text, runs: a.runs, dirty: true }
           if (ln.id === a.srcId) return { ...ln, deleted: true, dirty: true }
           return ln
         })
@@ -150,6 +160,18 @@ export function reducer(s, a) {
       return { ...s, zoom: Math.min(3, Math.max(0.4, Math.round(a.zoom * 100) / 100)) }
     case ACT.PAGE:
       return { ...s, currentPage: a.page }
+    case ACT.PAGES_SET: {
+      const pages = a.addKey ? { ...s.pages, [a.addKey]: { lines: [], objects: [] } } : s.pages
+      return {
+        ...s,
+        pageOrder: a.order,
+        pages,
+        dirty: a.seed ? s.dirty : true,
+        activeText: a.seed ? s.activeText : null,
+        selection: a.seed ? s.selection : null,
+        currentPage: Math.max(1, Math.min(a.current ?? s.currentPage, a.order.length))
+      }
+    }
     case ACT.THUMBS:
       return { ...s, thumbsOpen: !s.thumbsOpen }
     case ACT.PANEL:

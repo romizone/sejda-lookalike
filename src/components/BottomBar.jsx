@@ -20,7 +20,7 @@ export default function BottomBar({ state, dispatch, onGoTo }) {
       <button className="bb-btn" title="Zoom in" onClick={() => dispatch({ type: ACT.ZOOM, zoom: state.zoom * 1.2 })}>{Ic.plus}</button>
       <div className="bb-sep" />
       <button className="bb-btn" title="Previous page" onClick={() => onGoTo(state.currentPage - 2)}>{Ic.left}</button>
-      <span className="bb-page">{state.currentPage} / {state.numPages}</span>
+      <span className="bb-page">{state.currentPage} / {state.pageOrder.length}</span>
       <button className="bb-btn" title="Next page" onClick={() => onGoTo(state.currentPage)}>{Ic.right}</button>
     </div>
   )

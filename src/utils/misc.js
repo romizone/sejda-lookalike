@@ -1,3 +1,5 @@
+import { winAnsiCanEncode } from '../lib/fonts'
+
 export const BASE_SCALE = 2
 
 export const uid = () => Math.random().toString(36).slice(2, 10)
@@ -21,19 +23,16 @@ export function hexToRgb01(hex) {
   return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 }
 }
 
-const WIN_MAP = {
-  '\u2018': "'", '\u2019': "'", '\u201A': "'", '\u201B': "'",
-  '\u201C': '"', '\u201D': '"', '\u201E': '"',
-  '\u2013': '-', '\u2014': '--', '\u2026': '...', '\u2022': '*',
-  '\u00A0': ' ', '\u02C6': '^', '\u2039': '<', '\u203A': '>',
-  '\u2122': '(TM)', '\u20AC': 'EUR', '\u00AB': '<<', '\u00BB': '>>'
-}
-
+// WinAnsi already covers curly quotes, dashes, the euro sign and friends, so
+// nothing needs downgrading here - this only guards the fallback path where the
+// Unicode font could not be loaded.
 export function sanitizeWinAnsi(t) {
   let out = ''
   for (const ch of String(t ?? '')) {
-    if (WIN_MAP[ch] != null) { out += WIN_MAP[ch]; continue }
-    out += ch.codePointAt(0) <= 0xff ? ch : '?'
+    const c = ch.codePointAt(0)
+    if (c === 10 || c === 9) { out += ch; continue }
+    if (c < 0x20) { out += ' '; continue }
+    out += winAnsiCanEncode(ch) ? ch : '?'
   }
   return out
 }

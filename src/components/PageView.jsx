@@ -1,20 +1,38 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { BASE_SCALE, famCss, uid, slackOf, topForBaseline } from '../utils/misc'
 import { sampleTextColor, sampleBgColor } from '../lib/colors'
+import { domToRuns, runsToHtml, runsText, isPlain } from '../lib/runs'
 
-function useSyncText(ref, text, isActive) {
+// While the box has focus the browser owns its DOM - rewriting it there would
+// throw the caret away - so state is only pushed back into a box that is idle.
+function useSyncText(ref, item, isActive) {
   useLayoutEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (document.activeElement !== el && el.textContent !== text) {
-      el.textContent = text
+    if (!el || document.activeElement === el) return
+    if (item.runs && item.runs.length) {
+      const html = runsToHtml(item.runs)
+      if (el.innerHTML !== html) el.innerHTML = html
+    } else if (el.textContent !== item.text) {
+      el.textContent = item.text
     }
-  }, [text, isActive])
+  }, [item.text, item.runs, isActive])
+}
+
+function readBack(el) {
+  let runs = domToRuns(el)
+  // Browsers park a trailing <br> in an editable box; it is not part of the text.
+  const last = runs[runs.length - 1]
+  if (last && last.t.endsWith('\n')) {
+    const t = last.t.slice(0, -1)
+    if (t) runs[runs.length - 1] = { ...last, t }
+    else runs = runs.slice(0, -1)
+  }
+  return { text: runsText(runs), runs: isPlain(runs) ? undefined : runs }
 }
 
 function LineBox({ ln, isActive, handlers }) {
   const ref = useRef(null)
-  useSyncText(ref, ln.text, isActive)
+  useSyncText(ref, ln, isActive)
   const fs = ln.fontSize
   const lh = ln.lineHeight || fs * 1.2
   const st = {
@@ -64,7 +82,7 @@ function ObjBox({ ob, isSel, isActive, idx, handlers }) {
 
   if (ob.kind === 'text') {
     const tRef = useRef(null)
-    useSyncText(tRef, ob.text, isActive)
+    useSyncText(tRef, ob, isActive)
     const fs = ob.fontSize
     const lh = ob.lineHeight || fs * 1.2
     const st = {
@@ -359,7 +377,7 @@ function caretFromPoint(el, pt) {
   return false
 }
 
-export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeText, selection, pendingImage, formValues, dispatch, ACT, docRef }) {
+export default function PageView({ idx, src, pos, rotate = 0, pdfPage, zoom, pageState, tool, activeText, selection, pendingImage, formValues, dispatch, ACT, docRef }) {
   const holderRef = useRef(null)
   const overlayRef = useRef(null)
   const canvasRef = useRef(null)
@@ -369,7 +387,7 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
   const pendingPointRef = useRef(null)
   const pendingCaretRef = useRef(null)
 
-  const dims = docRef.pageDims?.[idx] || { w: 595 * BASE_SCALE, h: 842 * BASE_SCALE }
+  const dims = docRef.pageDims?.[src] || { w: 595 * BASE_SCALE, h: 842 * BASE_SCALE }
   const W = dims.w
   const H = dims.h
 
@@ -393,7 +411,7 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
     let cancelled = false
     const dpr = Math.min(window.devicePixelRatio || 1, 2)
     docRef.dpr = dpr
-    const vp = pdfPage.getViewport({ scale: BASE_SCALE })
+    const vp = pdfPage.getViewport({ scale: BASE_SCALE, rotation: 0 })
     canvas.width = Math.floor(vp.width * dpr)
     canvas.height = Math.floor(vp.height * dpr)
     canvas.style.width = '100%'
@@ -411,9 +429,18 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
     return () => { cancelled = true; try { task.cancel() } catch {} }
   }, [visible, pdfPage])
 
+  // A rotated page keeps its unrotated coordinate system; pointer positions are
+  // spun back around the overlay's centre before being used.
   const toBase = (clientX, clientY) => {
     const r = overlayRef.current.getBoundingClientRect()
-    return { x: (clientX - r.left) / zoom, y: (clientY - r.top) / zoom }
+    const cx = r.left + r.width / 2
+    const cy = r.top + r.height / 2
+    const rad = (-rotate * Math.PI) / 180
+    const dx = clientX - cx
+    const dy = clientY - cy
+    const ux = dx * Math.cos(rad) - dy * Math.sin(rad)
+    const uy = dx * Math.sin(rad) + dy * Math.cos(rad)
+    return { x: ux / zoom + W / 2, y: uy / zoom + H / 2 }
   }
 
   // A highlight should follow the rendered rows of text, not the rectangle the
@@ -429,15 +456,18 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
       const range = document.createRange()
       range.selectNodeContents(el)
       for (const cr of Array.from(range.getClientRects())) {
-        const a = toBase(cr.left, cr.top)
-        const b = toBase(cr.right, cr.bottom)
-        const rowH = b.y - a.y
-        const x = Math.max(a.x, band.x)
-        const x2 = Math.min(b.x, band.x + band.w)
-        const y2 = Math.min(b.y, band.y + band.h)
-        const overlapY = Math.min(b.y, band.y + band.h) - Math.max(a.y, band.y)
-        if (x2 - x > 2 && rowH > 2 && overlapY > rowH * 0.35 && y2 > band.y) {
-          out.push({ id: uid(), kind: 'mark', variant, x, y: a.y, w: x2 - x, h: rowH, color: MARK_COLORS[variant] })
+        const p1 = toBase(cr.left, cr.top)
+        const p2 = toBase(cr.right, cr.bottom)
+        const top = Math.min(p1.y, p2.y)
+        const bottom = Math.max(p1.y, p2.y)
+        const left = Math.min(p1.x, p2.x)
+        const right = Math.max(p1.x, p2.x)
+        const rowH = bottom - top
+        const x = Math.max(left, band.x)
+        const x2 = Math.min(right, band.x + band.w)
+        const overlapY = Math.min(bottom, band.y + band.h) - Math.max(top, band.y)
+        if (x2 - x > 2 && rowH > 2 && overlapY > rowH * 0.35) {
+          out.push({ id: uid(), kind: 'mark', variant, x, y: top, w: x2 - x, h: rowH, color: MARK_COLORS[variant] })
         }
       }
     }
@@ -550,9 +580,7 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
   const makeInputHandlers = kind => ({
     onInput: e => {
       if (!activeText || activeText.kind !== kind) return
-      let t = e.currentTarget.innerText
-      if (t.endsWith('\n')) t = t.slice(0, -1)
-      dispatch({ type: ACT.TEXT_PATCH, page: idx, kind, id: activeText.id, patch: { text: t } })
+      dispatch({ type: ACT.TEXT_PATCH, page: idx, kind, id: activeText.id, patch: readBack(e.currentTarget) })
     }
   })
 
@@ -562,6 +590,13 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
   /* ---------- keyboard: move, join and split across text blocks ---------- */
 
   const lineIndexOf = id => liveLines.findIndex(l => l.id === id)
+
+  const joinRuns = (a, glue, b) => {
+    if (!a.runs?.length && !b.runs?.length) return undefined
+    const left = a.runs?.length ? a.runs : [{ t: a.text }]
+    const right = b.runs?.length ? b.runs : [{ t: b.text }]
+    return [...left, ...(glue ? [{ t: glue }] : []), ...right].filter(r => r.t)
+  }
 
   const moveCaretToSibling = (dir, ln, ci) => {
     const i = lineIndexOf(ln.id)
@@ -595,7 +630,7 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
     push()
     ensureBg(ln)
     pendingCaretRef.current = { id: prev.id, offset: prev.text.length + glue.length }
-    dispatch({ type: ACT.TEXT_MERGE, page: idx, dstId: prev.id, srcId: ln.id, text: prev.text + glue + ln.text })
+    dispatch({ type: ACT.TEXT_MERGE, page: idx, dstId: prev.id, srcId: ln.id, text: prev.text + glue + ln.text, runs: joinRuns(prev, glue, ln) })
     return true
   }
 
@@ -608,9 +643,11 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
     const caret = ln.text.length
     push()
     ensureBg(next)
-    dispatch({ type: ACT.TEXT_MERGE, page: idx, dstId: ln.id, srcId: next.id, text: merged })
-    // The box keeps focus, so React will not re-sync its text for us.
-    el.textContent = merged
+    const runs = joinRuns(ln, glue, next)
+    dispatch({ type: ACT.TEXT_MERGE, page: idx, dstId: ln.id, srcId: next.id, text: merged, runs })
+    // The box keeps focus, so React will not re-sync its content for us.
+    if (runs) el.innerHTML = runsToHtml(runs)
+    else el.textContent = merged
     setCaretAt(el, caret)
     return true
   }
@@ -795,14 +832,25 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
   return (
     <div
       ref={holderRef}
-      className={`page-holder ${visible ? '' : 'placeholder'}`}
-      style={{ width: W * zoom, height: H * zoom }}
-      data-page={idx}
+      className={`page-holder ${visible ? '' : 'placeholder'} ${rotate ? 'rotated' : ''}`}
+      style={{
+        width: (rotate % 180 ? H : W) * zoom,
+        height: (rotate % 180 ? W : H) * zoom
+      }}
+      data-page={pos}
     >
       {!visible ? (
-        <span>Page {idx + 1}</span>
+        <span>Page {pos + 1}</span>
       ) : (
-        <div className="page" style={{ width: W, height: H, zoom }}>
+        <div
+          className="page"
+          style={{
+            width: W,
+            height: H,
+            zoom,
+            transform: rotate ? `translate(-50%, -50%) rotate(${rotate}deg)` : undefined
+          }}
+        >
           <canvas ref={canvasRef} className="pgcanvas" />
           <div ref={overlayRef} className={`overlay tool-${tool}`} onPointerDown={onOverlayDown}>
             {deadLines.map(ln => (
@@ -812,7 +860,7 @@ export default function PageView({ idx, pdfPage, zoom, pageState, tool, activeTe
                 style={{ left: ln.rect.x, top: ln.rect.y, width: ln.rect.w, height: ln.rect.h, background: ln.bg || '#fff' }}
               />
             ))}
-            {(docRef.widgets?.[idx] || []).map(wd => (
+            {(docRef.widgets?.[src] || []).map(wd => (
               <Widget
                 key={wd.id}
                 wd={wd}

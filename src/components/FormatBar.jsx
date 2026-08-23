@@ -1,5 +1,6 @@
 import React from 'react'
 import { ACT } from '../store'
+import { domToRuns, runsText, isPlain } from '../lib/runs'
 
 export default function FormatBar({ state, dispatch }) {
   const { activeText, selection, pages } = state
@@ -19,6 +20,55 @@ export default function FormatBar({ state, dispatch }) {
     if (!target) return
     dispatch({ type: ACT.TEXT_PATCH, page: target.page, kind: target.kind, id: target.id, patch: p })
   }
+
+  // The format bar preserves the page selection (it cancels its own mousedown),
+  // so a live selection means the change belongs to those characters rather
+  // than to the whole block.
+  const selectedBox = () => {
+    if (!target) return null
+    const el = document.querySelector(`[data-id="${target.id}"]`)
+    const sel = window.getSelection()
+    if (!el || !sel || !sel.rangeCount || sel.isCollapsed) return null
+    return el.contains(sel.getRangeAt(0).commonAncestorContainer) ? el : null
+  }
+
+  const commitRuns = el => {
+    const runs = domToRuns(el)
+    dispatch({
+      type: ACT.TEXT_PATCH,
+      page: target.page,
+      kind: target.kind,
+      id: target.id,
+      patch: { text: runsText(runs), runs: isPlain(runs) ? undefined : runs }
+    })
+  }
+
+  const onSelection = fn => {
+    const el = selectedBox()
+    if (!el) return false
+    dispatch({ type: ACT.PUSH })
+    fn(el)
+    commitRuns(el)
+    return true
+  }
+
+  const cmd = (name, value) => onSelection(() => {
+    document.execCommand('styleWithCSS', false, true)
+    document.execCommand(name, false, value)
+  })
+
+  const sizeSelection = px => onSelection(el => {
+    // execCommand only speaks the 1-7 scale, so the marker it leaves behind is
+    // swapped for a span carrying the exact size.
+    document.execCommand('styleWithCSS', false, false)
+    document.execCommand('fontSize', false, '7')
+    el.querySelectorAll('font[size="7"]').forEach(f => {
+      const span = document.createElement('span')
+      span.style.fontSize = `${px}px`
+      while (f.firstChild) span.appendChild(f.firstChild)
+      f.replaceWith(span)
+    })
+  })
 
   const patchObj = p => {
     if (!selObj) return
@@ -59,17 +109,20 @@ export default function FormatBar({ state, dispatch }) {
           <input
             className="fb-num" type="number" min={4} max={200}
             value={Math.round((el.fontSize || 12) * 10) / 10}
-            onChange={e => patch({ fontSize: Math.max(4, Math.min(200, Number(e.target.value) || 12)) })}
+            onChange={e => {
+              const px = Math.max(4, Math.min(200, Number(e.target.value) || 12))
+              if (!sizeSelection(px)) patch({ fontSize: px })
+            }}
             title="Font size"
           />
-          <button className="fb-btn" title="Smaller" onClick={() => patch({ fontSize: Math.max(4, (el.fontSize || 12) - 1) })}>−</button>
-          <button className="fb-btn" title="Bigger" onClick={() => patch({ fontSize: (el.fontSize || 12) + 1 })}>+</button>
+          <button className="fb-btn" title="Smaller" onClick={() => { const px = Math.max(4, (el.fontSize || 12) - 1); if (!sizeSelection(px)) patch({ fontSize: px }) }}>−</button>
+          <button className="fb-btn" title="Bigger" onClick={() => { const px = (el.fontSize || 12) + 1; if (!sizeSelection(px)) patch({ fontSize: px }) }}>+</button>
 
           <div className="fb-sep" />
 
-          <button className={`fb-btn ${el.bold ? 'on' : ''}`} style={{ fontWeight: 800 }} onClick={() => patch({ bold: !el.bold })}>B</button>
-          <button className={`fb-btn ${el.italic ? 'on' : ''}`} style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }} onClick={() => patch({ italic: !el.italic })}>I</button>
-          <button className={`fb-btn ${el.underline ? 'on' : ''}`} style={{ textDecoration: 'underline' }} onClick={() => patch({ underline: !el.underline })}>U</button>
+          <button className={`fb-btn ${el.bold ? 'on' : ''}`} style={{ fontWeight: 800 }} onClick={() => { if (!cmd('bold')) patch({ bold: !el.bold }) }}>B</button>
+          <button className={`fb-btn ${el.italic ? 'on' : ''}`} style={{ fontStyle: 'italic', fontFamily: 'Georgia, serif' }} onClick={() => { if (!cmd('italic')) patch({ italic: !el.italic }) }}>I</button>
+          <button className={`fb-btn ${el.underline ? 'on' : ''}`} style={{ textDecoration: 'underline' }} onClick={() => { if (!cmd('underline')) patch({ underline: !el.underline }) }}>U</button>
 
           <div className="fb-sep" />
 
@@ -77,7 +130,7 @@ export default function FormatBar({ state, dispatch }) {
             className="fb-color" type="color"
             value={el.color || '#111111'}
             title="Text color"
-            onChange={e => patch({ color: e.target.value })}
+            onChange={e => { if (!cmd('foreColor', e.target.value)) patch({ color: e.target.value }) }}
           />
 
           <div className="fb-sep" />

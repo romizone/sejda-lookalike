@@ -1,11 +1,6 @@
 import { hexToRgb01, sanitizeWinAnsi, slackOf } from '../utils/misc'
 import { sampleTextColor } from './colors'
-
-const STD = {
-  serif: ['Times-Roman', 'Times-Bold', 'Times-Italic', 'Times-BoldItalic'],
-  'sans-serif': ['Helvetica', 'Helvetica-Bold', 'Helvetica-Oblique', 'Helvetica-BoldOblique'],
-  monospace: ['Courier', 'Courier-Bold', 'Courier-Oblique', 'Courier-BoldOblique']
-}
+import { STD, LIBERATION, winAnsiCanEncode, styleIndex, fontUrl } from './fonts'
 
 async function embedImage(doc, page, o, X, Y, k) {
   const b64 = o.src.split(',')[1]
@@ -32,30 +27,82 @@ async function convertToPng(doc, src) {
   return doc.embedPng(buf)
 }
 
-export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr = 1, formValues = {}, linkPages = {} }) {
-  const { PDFDocument, StandardFonts, rgb, PDFName, PDFString } = await import('pdf-lib')
+function tokenize(text) {
+  const out = []
+  const lines = text.split('\n')
+  lines.forEach((line, i) => {
+    if (i) out.push('\n')
+    for (const t of line.split(/(\s+)/)) if (t !== '') out.push(t)
+  })
+  return out
+}
+
+export async function exportEditedPdf({
+  bytes, pages, baseScale, canvases, dpr = 1,
+  formValues = {}, linkPages = {}, pageOrder = null
+}) {
+  const { PDFDocument, rgb, degrees, PDFName, PDFString } = await import('pdf-lib')
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
-  // embedFont resolves asynchronously; using the promise as if it were the
-  // font makes every measurement and drawText throw, which the surrounding
-  // try/catch used to swallow - the old text got covered and the new text was
-  // never written.
-  const cache = new Map()
-  const getFont = async (fam, b, i) => {
-    const list = STD[fam] || STD['sans-serif']
-    const name = list[(b ? 1 : 0) + (i ? 2 : 0)]
-    if (!cache.has(name)) cache.set(name, await doc.embedFont(name))
-    return cache.get(name)
+
+  const stdCache = new Map()
+  const uniCache = new Map()
+  let fontkitReady = false
+
+  const embedStd = async name => {
+    if (!stdCache.has(name)) stdCache.set(name, await doc.embedFont(name))
+    return stdCache.get(name)
   }
 
-  const pageCount = doc.getPageCount()
-  for (let pi = 0; pi < pageCount; pi++) {
-    const pe = pages[pi]
-    if (!pe || (!pe.lines.length && !pe.objects.length)) continue
-    const page = doc.getPage(pi)
+  // Standard fonts cost nothing and keep the original metrics, so they stay the
+  // default; a Liberation face is only fetched when the text uses characters
+  // WinAnsi cannot represent.
+  const getFont = async (fam, bold, italic, text) => {
+    const idx = styleIndex(bold, italic)
+    const family = STD[fam] ? fam : 'sans-serif'
+    if (!winAnsiCanEncode(text)) {
+      const name = LIBERATION[family][idx]
+      try {
+        if (!uniCache.has(name)) {
+          if (!fontkitReady) {
+            const fontkit = (await import('@pdf-lib/fontkit')).default
+            doc.registerFontkit(fontkit)
+            fontkitReady = true
+          }
+          const res = await fetch(fontUrl(name))
+          if (!res.ok) throw new Error(`font ${name} unavailable`)
+          uniCache.set(name, await doc.embedFont(await res.arrayBuffer(), { subset: true }))
+        }
+        return { font: uniCache.get(name), std: false }
+      } catch {
+        /* fall through to the standard font, which will lose those glyphs */
+      }
+    }
+    return { font: await embedStd(STD[family][idx]), std: true }
+  }
+
+  const measure = (font, text, size) => {
+    try { return font.widthOfTextAtSize(text, size) } catch { return text.length * size * 0.5 }
+  }
+
+  const originals = doc.getPages()
+  const order = pageOrder && pageOrder.length
+    ? pageOrder
+    : originals.map((_, i) => ({ key: i, src: i, rotate: 0 }))
+
+  // The page tree is rebuilt before anything is drawn so that inserted blank
+  // pages can receive content too.
+  const targets = applyPageOrder(doc, originals, order, pageOrder && pageOrder.length, degrees)
+
+  for (const entry of order) {
+    const page = targets.get(entry.key)
+    if (!page) continue
+    const pe = pages[entry.key]
     const { height: PH } = page.getSize()
     const k = 1 / baseScale
     const X = v => v * k
     const Y = v => PH - v * k
+
+    if (!pe || (!pe.lines.length && !pe.objects.length)) continue
 
     const cover = (r, hex) => {
       const c = hexToRgb01(hex || '#ffffff')
@@ -71,70 +118,89 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
       return o.w ? (o.w + slackOf(o.w)) * k : Infinity
     }
 
-    // Break the text the same way the on-screen box does, so what the editor
-    // shows and what lands in the file agree.
-    const layoutRows = async (text, o) => {
-      const t = sanitizeWinAnsi(text ?? '')
-      const font = await getFont(o.family || 'sans-serif', !!o.bold, !!o.italic)
-      const size = Math.max(2, (o.fontSize || 12) * k)
-      const boxW = wrapWidthOf(o)
-      const measure = str => {
-        try { return font.widthOfTextAtSize(str, size) } catch { return str.length * size * 0.5 }
+    // One segment per styled token, so a bold word inside a sentence keeps its
+    // own font while the line still wraps as a whole.
+    const layout = async item => {
+      const family = item.family || 'sans-serif'
+      const baseStyle = {
+        bold: !!item.bold,
+        italic: !!item.italic,
+        under: !!item.underline,
+        color: item.color || '#111111',
+        size: item.fontSize || 12
       }
-      const rows = []
-      for (const raw of t.split('\n')) {
-        if (!raw) { rows.push(''); continue }
-        if (measure(raw) <= boxW) { rows.push(raw); continue }
-        const words = raw.split(/(\s+)/)
-        let line = ''
-        for (let wi = 0; wi < words.length; wi++) {
-          const cand = line + words[wi]
-          if (measure(cand) > boxW && line.trim()) {
-            rows.push(line.replace(/\s+$/, ''))
-            line = words[wi].replace(/^\s+/, '')
-          } else {
-            line = cand
-          }
+      const runs = item.runs && item.runs.length ? item.runs : [{ t: item.text || '' }]
+      const boxW = wrapWidthOf(item)
+
+      const rows = [[]]
+      let width = 0
+      const newRow = () => { rows.push([]); width = 0 }
+
+      for (const r of runs) {
+        const bold = r.b === undefined ? baseStyle.bold : !!r.b
+        const italic = r.i === undefined ? baseStyle.italic : !!r.i
+        const under = r.u === undefined ? baseStyle.under : !!r.u
+        const color = r.c || baseStyle.color
+        const size = Math.max(2, (r.s || baseStyle.size) * k)
+        const { font, std } = await getFont(family, bold, italic, r.t || '')
+        const text = std ? sanitizeWinAnsi(r.t || '') : (r.t || '')
+
+        for (const tok of tokenize(text)) {
+          if (tok === '\n') { newRow(); continue }
+          const isSpace = /^\s+$/.test(tok)
+          const w = measure(font, tok, size)
+          if (!isSpace && width > 0 && width + w > boxW) newRow()
+          if (isSpace && width === 0) continue
+          rows[rows.length - 1].push({ text: tok, w, font, size, color, under })
+          width += w
         }
-        if (line.trim() || rows[rows.length - 1]) rows.push(line)
       }
-      return { rows, font, size }
+      return rows
     }
 
-    const drawRows = (o, { rows, font, size }) => {
-      const col = hexToRgb01(o.color || '#111111')
-      const color = rgb(col.r, col.g, col.b)
-      const x0 = X(o.x)
-      const step = (o.lineHeight || (o.fontSize || 12) * 1.25) * k
-      const y0 = Y(o.baselineY ?? o.y)
-      rows.forEach((row, i) => {
-        if (!row) return
-        const yy = y0 - i * step
-        try {
-          page.drawText(row, { x: x0, y: yy, size, font, color })
-        } catch {
-          try { page.drawText(row.replace(/[^\x00-\xFF]/g, '?'), { x: x0, y: yy, size, font, color }) } catch {}
-        }
-        if (o.underline) {
-          let w = 0
-          try { w = font.widthOfTextAtSize(row, size) } catch { w = row.length * size * 0.5 }
-          page.drawRectangle({ x: x0, y: yy - size * 0.22, width: Math.max(w, 1), height: Math.max(0.5, size * 0.07), color })
+    const draw = (item, rows) => {
+      const x0 = X(item.x)
+      const step = (item.lineHeight || (item.fontSize || 12) * 1.25) * k
+      const y0 = Y(item.baselineY ?? item.y)
+      rows.forEach((row, ri) => {
+        let x = x0
+        const y = y0 - ri * step
+        for (const seg of row) {
+          const c = hexToRgb01(seg.color)
+          const color = rgb(c.r, c.g, c.b)
+          if (seg.text.trim()) {
+            try {
+              page.drawText(seg.text, { x, y, size: seg.size, font: seg.font, color })
+            } catch {
+              try {
+                page.drawText(seg.text.replace(/[^\x00-\xFF]/g, '?'), { x, y, size: seg.size, font: seg.font, color })
+              } catch { /* nothing sensible left to draw */ }
+            }
+          }
+          if (seg.under) {
+            page.drawRectangle({
+              x, y: y - seg.size * 0.16,
+              width: Math.max(seg.w, 1), height: Math.max(0.5, seg.size * 0.06),
+              color
+            })
+          }
+          x += seg.w
         }
       })
     }
 
     const dirtyLines = pe.lines.filter(l => !l.deleted && l.dirty)
     const layouts = new Map()
-    for (const ln of dirtyLines) layouts.set(ln.id, await layoutRows(ln.text, ln))
+    for (const ln of dirtyLines) layouts.set(ln.id, await layout(ln))
 
     // Re-flowed text can end up taller than the block it replaces; grow the
     // patch to match so nothing from the original bleeds through underneath.
     const patchRect = ln => {
-      const lay = layouts.get(ln.id)
+      const rows = layouts.get(ln.id)
       const r = { ...ln.rect }
-      if (!lay) return r
+      if (!rows) return r
       const step = ln.lineHeight || ln.fontSize * 1.25
-      const bottom = (ln.baselineY ?? ln.y) + Math.max(0, lay.rows.length - 1) * step + ln.fontSize * 0.3
+      const bottom = (ln.baselineY ?? ln.y) + Math.max(0, rows.length - 1) * step + ln.fontSize * 0.3
       r.h = Math.max(r.h, bottom - r.y)
       return r
     }
@@ -161,15 +227,15 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
     }
 
     for (const ln of dirtyLines) {
-      if (!ln.color) ln.color = sampleTextColor(canvases?.[pi], ln.rect, dpr) || '#111111'
-      const lay = layouts.get(ln.id)
-      if (lay && lay.rows.some(r => r.trim())) drawRows(ln, lay)
+      if (!ln.color) ln.color = sampleTextColor(canvases?.[entry.key] ?? canvases?.[entry.src], ln.rect, dpr) || '#111111'
+      const rows = layouts.get(ln.id)
+      if (rows && rows.some(r => r.some(s => s.text.trim()))) draw(ln, rows)
     }
 
     for (const o of pe.objects) {
       if (o.kind === 'text') {
-        const lay = await layoutRows(o.text, o)
-        if (lay.rows.some(r => r.trim())) drawRows(o, lay)
+        const rows = await layout(o)
+        if (rows.some(r => r.some(s => s.text.trim()))) draw(o, rows)
       } else if (o.kind === 'image') {
         await embedImage(doc, page, o, X, Y, k)
       } else if (o.kind === 'rect') {
@@ -222,7 +288,11 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
       }
     }
 
-    writeLinks({ doc, page, objects: pe.objects, X, Y, replaceExisting: !!linkPages[pi], PDFName, PDFString })
+    writeLinks({
+      doc, page, objects: pe.objects, X, Y,
+      replaceExisting: entry.src != null && !!linkPages[entry.src],
+      PDFName, PDFString
+    })
     writeNewFields({ doc, page, objects: pe.objects, X, Y, k })
   }
 
@@ -230,6 +300,45 @@ export async function exportEditedPdf({ bytes, pages, baseScale, canvases, dpr =
 
   const out = await doc.save({ useObjectStreams: false })
   return new Blob([out], { type: 'application/pdf' })
+}
+
+// Rebuilding the page tree in place keeps the AcroForm and every other
+// document-level structure attached, which copying pages into a fresh document
+// would not.
+function applyPageOrder(doc, originals, order, active, degrees) {
+  const targets = new Map()
+
+  if (!active) {
+    order.forEach(e => { if (originals[e.src]) targets.set(e.key, originals[e.src]) })
+    return targets
+  }
+
+  // entry.rotate already carries the page's own rotation, so it is absolute.
+  for (const e of order) {
+    if (e.src == null) continue
+    const p = originals[e.src]
+    if (!p) continue
+    p.setRotation(degrees((((e.rotate || 0) % 360) + 360) % 360))
+  }
+
+  const sameOrder = order.length === originals.length && order.every((e, i) => e.src === i)
+  if (sameOrder) {
+    order.forEach(e => targets.set(e.key, originals[e.src]))
+    return targets
+  }
+
+  for (let i = doc.getPageCount() - 1; i >= 0; i--) doc.removePage(i)
+  order.forEach((e, i) => {
+    if (e.src == null) {
+      const blank = doc.insertPage(i, e.size || [595, 842])
+      blank.setRotation(degrees((((e.rotate || 0) % 360) + 360) % 360))
+      targets.set(e.key, blank)
+    } else {
+      doc.insertPage(i, originals[e.src])
+      targets.set(e.key, originals[e.src])
+    }
+  })
+  return targets
 }
 
 function writeLinks({ doc, page, objects, X, Y, replaceExisting, PDFName, PDFString }) {

@@ -19,7 +19,10 @@ function normFam(f) {
 }
 
 export async function extractLines(page, scale, pageNo) {
-  const vp = page.getViewport({ scale })
+  // Always read the page in its unrotated frame. A rotated viewport turns the
+  // glyph runs sideways, and grouping by y would then stitch separate lines
+  // together. Display rotation is handled by the editor instead.
+  const vp = page.getViewport({ scale, rotation: 0 })
   const tc = await page.getTextContent()
   const vt = vp.transform
   const segs = []
@@ -131,7 +134,7 @@ function overlapPct(a, b) {
   return o > 0 ? o / Math.min(a.w, b.w) : -1
 }
 
-function groupParagraphs(lines, pageNo) {
+export function groupParagraphs(lines, pageNo) {
   const paras = []
   let cur = []
   const flush = () => {

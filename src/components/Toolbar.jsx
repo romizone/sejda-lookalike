@@ -11,6 +11,8 @@ const I = {
   forms: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><rect x="3" y="6" width="18" height="5" rx="1.5" /><rect x="3" y="14" width="11" height="5" rx="1.5" /></svg>,
   sign: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 18c3.5 0 4-11 7-11s2 8 4.5 8S18 9 21 9" /><path d="M4 21h16" /></svg>,
   annotate: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m4 15 9-9 5 5-9 9H4z" /><path d="M3 21h18" /></svg>,
+  pages: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><rect x="3" y="4" width="12" height="16" rx="1.6" /><path d="M18 7v13H8" /></svg>,
+  ocr: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" /><path d="M8 15V9h1.6a2 2 0 0 1 0 4H8m8-4h-2.2a1.4 1.4 0 0 0 0 2.8h.9a1.4 1.4 0 0 1 0 2.8H12" /></svg>,
   find: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><circle cx="11" cy="11" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>,
   undo: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10a6 6 0 0 1 0 12h-3" /></svg>,
   redo: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m15 14 5-5-5-5" /><path d="M20 9H10a6 6 0 0 0 0 12h3" /></svg>
@@ -20,9 +22,10 @@ const ANNOTATE = ['highlight', 'strike', 'underline']
 const SHAPES = ['rect', 'ellipse', 'line', 'arrow']
 const FIELDS = ['field-text', 'field-multiline', 'field-check', 'field-radio', 'field-dropdown']
 
-export default function Toolbar({ state, dispatch }) {
+export default function Toolbar({ state, dispatch, pageOps }) {
   const imgInput = useRef(null)
   const set = tool => dispatch({ type: ACT.SET_TOOL, tool })
+  const cur = Math.max(0, state.currentPage - 1)
 
   const onImgFile = e => {
     const f = e.target.files?.[0]
@@ -109,6 +112,21 @@ export default function Toolbar({ state, dispatch }) {
         ]}
       />
 
+      <Menu
+        label="Pages"
+        icon={I.pages}
+        items={[
+          { key: 'rl', label: 'Rotate left', hint: '⟲', run: () => pageOps.rotate(cur, -90) },
+          { key: 'rr', label: 'Rotate right', hint: '⟳', run: () => pageOps.rotate(cur, 90) },
+          { key: 's1', sep: true },
+          { key: 'ib', label: 'Insert blank page', run: () => pageOps.insertBlank(cur) },
+          { key: 'ml', label: 'Move page up', run: () => pageOps.move(cur, cur - 1) },
+          { key: 'mr', label: 'Move page down', run: () => pageOps.move(cur, cur + 1) },
+          { key: 's2', sep: true },
+          { key: 'del', label: 'Delete page', run: () => pageOps.remove(cur) }
+        ]}
+      />
+
       <div className="tb-sep" />
       <button
         className={`tool ${state.panel === 'find' ? 'active' : ''}`}
@@ -116,6 +134,13 @@ export default function Toolbar({ state, dispatch }) {
         title="Find and replace"
       >
         {I.find}Find
+      </button>
+      <button
+        className={`tool ${state.panel === 'ocr' ? 'active' : ''}`}
+        onClick={() => dispatch({ type: ACT.PANEL, panel: 'ocr' })}
+        title="Recognise text on scanned pages"
+      >
+        {I.ocr}OCR
       </button>
 
       <div className="tb-right">

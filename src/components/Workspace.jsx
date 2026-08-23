@@ -5,12 +5,12 @@ import BottomBar from './BottomBar'
 import FindPanel from './FindPanel'
 import { ACT } from '../store'
 
-export default function Workspace({ state, dispatch, docRef }) {
+export default function Workspace({ state, dispatch, docRef, pageOps }) {
   const scrollRef = useRef(null)
   const holdersRef = useRef({})
 
   const goTo = i => {
-    const n = Math.max(0, Math.min(state.numPages - 1, i))
+    const n = Math.max(0, Math.min(state.pageOrder.length - 1, i))
     const el = holdersRef.current[n]
     if (el && scrollRef.current) {
       scrollRef.current.scrollTo({ top: el.offsetTop - 24, behavior: 'smooth' })
@@ -23,7 +23,7 @@ export default function Workspace({ state, dispatch, docRef }) {
     if (!sc) return
     const mid = sc.scrollTop + sc.clientHeight / 2
     let best = 0
-    for (let i = 0; i < state.numPages; i++) {
+    for (let i = 0; i < state.pageOrder.length; i++) {
       const el = holdersRef.current[i]
       if (el && el.offsetTop <= mid) best = i
     }
@@ -36,21 +36,27 @@ export default function Workspace({ state, dispatch, docRef }) {
       <div className="workspace">
       <Thumbs
         open={state.thumbsOpen}
-        count={state.numPages}
+        order={state.pageOrder}
         current={state.currentPage - 1}
         docRef={docRef}
         onGoTo={goTo}
+        onRotate={(pos, deg) => pageOps.rotate(pos, deg)}
+        onDelete={pos => pageOps.remove(pos)}
+        onReorder={(from, to) => pageOps.move(from, to)}
         revision={Object.values(state.pages).filter(p => p.lines.length > 0).length + Object.keys(docRef.pagesMap || {}).length}
       />
       <div className="scroll-area" ref={scrollRef} onScroll={onScroll}>
         <div className="pages-inner">
-          {Array.from({ length: state.numPages }, (_, i) => (
-            <div key={i} ref={el => { holdersRef.current[i] = el }}>
+          {state.pageOrder.map((entry, i) => (
+            <div key={entry.key} ref={el => { holdersRef.current[i] = el }}>
               <PageView
-                idx={i}
-                pdfPage={docRef.pagesMap?.[i]}
+                idx={entry.key}
+                src={entry.src}
+                pos={i}
+                rotate={entry.rotate || 0}
+                pdfPage={entry.src == null ? null : docRef.pagesMap?.[entry.src]}
                 zoom={state.zoom}
-                pageState={state.pages[i]}
+                pageState={state.pages[entry.key]}
                 tool={state.tool}
                 activeText={state.activeText}
                 selection={state.selection}

@@ -24,9 +24,10 @@ export default function Landing({ onFile, onSample, error }) {
 
       <h1>Edit PDF files for free</h1>
       <p className="sub">
-        Click any paragraph to retype it in place and watch it re-flow. Fill forms, sign,
-        highlight, add links, images and shapes, find and replace. Everything is processed
-        locally in your browser; your file never leaves your device.
+        Click any paragraph to retype it in place and watch it re-flow. Format a single
+        word, fill forms, sign, highlight, add links, images and shapes, reorder or rotate
+        pages, and recognise text on scans. Everything is processed locally in your
+        browser; your file never leaves your device.
       </p>
 
       <div
