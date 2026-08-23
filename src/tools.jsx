@@ -18,6 +18,7 @@ export const GROUPS = [
   'Edit & sign',
   'Convert from PDF',
   'Convert to PDF',
+  'Security',
   'Document'
 ]
 
@@ -128,6 +129,31 @@ export const TOOLS = [
     icon: svg(<><rect x="3" y="3" width="13" height="13" rx="1.6" /><circle cx="8" cy="8" r="1.4" /><path d="M8 21h11a2 2 0 0 0 2-2V8" /></>)
   },
 
+  {
+    id: 'excel', group: 'Convert from PDF', ...GREEN,
+    name: 'PDF To Excel', blurb: 'Lift tables out of a PDF into a spreadsheet',
+    icon: svg(<><rect x="3" y="3" width="18" height="18" rx="1.6" /><path d="M3 9h18M3 15h18M9 3v18M15 3v18" /></>)
+  },
+  {
+    id: 'protect', group: 'Security', ...VIOLET,
+    name: 'Protect', blurb: 'Lock a PDF with a password and decide what readers may do',
+    icon: svg(<><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>)
+  },
+  {
+    id: 'unlock', group: 'Security', ...VIOLET,
+    name: 'Unlock', blurb: 'Remove the password from a PDF you can already open',
+    icon: svg(<><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 7.5-1.9" /></>)
+  },
+  {
+    id: 'redact', group: 'Security', ...VIOLET,
+    name: 'Redact', blurb: 'Black out anything private, and take the words away with it',
+    icon: svg(<><rect x="3" y="4" width="18" height="16" rx="1.6" /><path d="M6 9h8M6 13h12M6 17h5" strokeWidth="2.6" /></>)
+  },
+  {
+    id: 'repair', group: 'Document', ...BLUE,
+    name: 'Repair', blurb: 'Rebuild a PDF that a reader refuses to open',
+    icon: svg(<><path d="M14.7 6.3a4 4 0 0 0 5 5l-8.3 8.3a2.8 2.8 0 0 1-4-4z" /><path d="m5 19 2-2" /></>)
+  },
   {
     id: 'metadata', group: 'Document', ...BLUE,
     name: 'Edit Properties', blurb: 'Change the title, author and the rest of the document details',

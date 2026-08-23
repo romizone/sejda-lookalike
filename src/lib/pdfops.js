@@ -171,7 +171,7 @@ export async function cropPdf(bytes, { box, pages, size }) {
 
 /* ---------- compress ---------- */
 
-async function reencodeJpeg(bytes, quality, maxSide) {
+async function reencodeJpeg(bytes, quality, maxSide, grey) {
   const blob = new Blob([bytes], { type: 'image/jpeg' })
   const bmp = await createImageBitmap(blob)
   const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height))
@@ -181,6 +181,7 @@ async function reencodeJpeg(bytes, quality, maxSide) {
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')
+  if (grey) ctx.filter = 'grayscale(1)'
   ctx.drawImage(bmp, 0, 0, w, h)
   bmp.close?.()
   const out = await new Promise(r => canvas.toBlob(r, 'image/jpeg', quality))
@@ -191,7 +192,7 @@ async function reencodeJpeg(bytes, quality, maxSide) {
 // Scanned pages are almost entirely JPEG data, so re-encoding those streams is
 // where the bytes actually are. Everything else is left untouched and the file
 // is re-saved with object streams, which shrinks the document structure itself.
-export async function compressPdf(bytes, { quality = 0.62, maxSide = 1800 } = {}, onProgress) {
+export async function compressPdf(bytes, { quality = 0.62, maxSide = 1800, grey = false } = {}, onProgress) {
   const { PDFDocument, PDFName, PDFRawStream, PDFNumber } = await import('pdf-lib')
   const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
 
@@ -209,8 +210,9 @@ export async function compressPdf(bytes, { quality = 0.62, maxSide = 1800 } = {}
   let done = 0
   for (const { ref, obj, dict } of images) {
     try {
-      const res = await reencodeJpeg(obj.contents, quality, maxSide)
-      if (res && res.bytes.length < obj.contents.length * 0.95) {
+      const res = await reencodeJpeg(obj.contents, quality, maxSide, grey)
+      // Turning a picture grey is worth doing even when it saves nothing.
+      if (res && (grey || res.bytes.length < obj.contents.length * 0.95)) {
         dict.set(PDFName.of('Width'), PDFNumber.of(res.width))
         dict.set(PDFName.of('Height'), PDFNumber.of(res.height))
         dict.set(PDFName.of('Length'), PDFNumber.of(res.bytes.length))

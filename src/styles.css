@@ -735,3 +735,47 @@ input, select { font-family: inherit; color: inherit; }
 .tool-input.wide { min-width: 300px; }
 .hf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 16px; }
 .tool-options.nup { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+
+/* security, redact and spreadsheet preview */
+.perm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin: 6px 0 14px; }
+.perm {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  border: 1.4px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.perm.on { border-color: var(--green); background: var(--green-soft); color: var(--green-dark); }
+.perm input { accent-color: var(--green); }
+.perm.block { margin-bottom: 14px; }
+.tool-lock {
+  width: 60px; height: 78px;
+  display: grid; place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f7f9f7;
+  color: var(--sub);
+}
+.redact-box {
+  position: absolute;
+  background: #000;
+  outline: 1.5px solid #e11d48;
+  cursor: pointer;
+}
+.redact-box.drawing { opacity: 0.6; pointer-events: none; }
+.redact-warning {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid #f0d9a8;
+  border-radius: 10px;
+  background: #fffbe9;
+  color: #6b5307;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.redact-warning strong { display: block; margin-bottom: 3px; color: #4a3a05; }
+.xl-preview { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 16px; }
+.xl-preview table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.xl-preview td { border: 1px solid #eef1ee; padding: 4px 8px; white-space: nowrap; }

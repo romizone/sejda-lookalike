@@ -11,6 +11,7 @@ const LEVELS = {
 export default function CompressTool({ tool, onBack }) {
   const [pdf, open, clear] = usePdf()
   const [level, setLevel] = useState('balanced')
+  const [grey, setGrey] = useState(false)
   const [busy, setBusy] = useState(false)
   const [pct, setPct] = useState(0)
   const [done, setDone] = useState(null)
@@ -24,7 +25,7 @@ export default function CompressTool({ tool, onBack }) {
     setPct(0)
     try {
       const { quality, maxSide } = LEVELS[level]
-      const { blob, images } = await compressPdf(pdf.bytes, { quality, maxSide }, p => setPct(p))
+      const { blob, images } = await compressPdf(pdf.bytes, { quality, maxSide, grey }, p => setPct(p))
       const before = pdf.size ?? pdf.bytes.byteLength
       const saved = before - blob.size
       const name = `${baseOf(pdf.name)}-compressed.pdf`
@@ -67,6 +68,11 @@ export default function CompressTool({ tool, onBack }) {
               </label>
             ))}
           </div>
+
+          <label className={`perm block ${grey ? 'on' : ''}`}>
+            <input type="checkbox" checked={grey} onChange={e => setGrey(e.target.checked)} />
+            Turn the pictures grey as well — smaller again, and kinder to a black and white printer
+          </label>
 
           <p className="tool-note">
             Photographs inside the file are re-encoded and the document structure is packed more

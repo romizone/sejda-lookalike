@@ -88,7 +88,14 @@ export function usePdf() {
       const doc = await pdfjs.getDocument({ data: clone }).promise
       setState({ name: file.name, bytes, doc, count: doc.numPages, size: file.size, error: null, busy: false })
     } catch (err) {
-      setState(s => ({ ...s, busy: false, error: `Could not open this PDF. ${err?.message || ''}` }))
+      const msg = err?.message || ''
+      setState(s => ({
+        ...s,
+        busy: false,
+        error: /password/i.test(msg)
+          ? 'This PDF is protected by a password. Open it with the Unlock tool first.'
+          : `Could not open this PDF. ${msg}`
+      }))
     }
   }, [])
 

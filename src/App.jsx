@@ -17,6 +17,9 @@ import OrganiseTool from './components/tools/OrganiseTool'
 import StampTool from './components/tools/StampTool'
 import ExportTool from './components/tools/ExportTool'
 import { NUpTool, FlattenTool, ImagesToPdfTool, MetadataTool } from './components/tools/SmallTools'
+import { ProtectTool, UnlockTool, RepairTool } from './components/tools/SecurityTools'
+import ExcelTool from './components/tools/ExcelTool'
+import RedactTool from './components/tools/RedactTool'
 import { toolById } from './tools'
 import Header from './components/Header'
 import Toolbar from './components/Toolbar'
@@ -347,6 +350,11 @@ export default function App() {
       case 'getimages': return <ExportTool tool={tool} kind="images" onBack={goHome} />
       case 'topdf': return <ImagesToPdfTool tool={tool} onBack={goHome} />
       case 'metadata': return <MetadataTool tool={tool} onBack={goHome} />
+      case 'excel': return <ExcelTool tool={tool} onBack={goHome} />
+      case 'protect': return <ProtectTool tool={tool} onBack={goHome} />
+      case 'unlock': return <UnlockTool tool={tool} onBack={goHome} />
+      case 'redact': return <RedactTool tool={tool} onBack={goHome} />
+      case 'repair': return <RepairTool tool={tool} onBack={goHome} />
       default: return null
     }
   }

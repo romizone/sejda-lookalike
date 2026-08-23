@@ -23,7 +23,9 @@ function normFam(f) {
 const isBoldName = f => /bold|black|heavy|semibold|demibold/i.test(String(f || ''))
 const isItalicName = f => /italic|oblique/i.test(String(f || ''))
 
-export async function extractLines(page, scale, pageNo) {
+// The glyph runs of a page in editor coordinates. Shared with the table
+// reader, which needs the runs themselves rather than the lines they form.
+export async function pageSegments(page, scale) {
   // Always read the page in its unrotated frame. A rotated viewport turns the
   // glyph runs sideways, and grouping by y would then stitch separate lines
   // together. Display rotation is handled by the editor instead.
@@ -61,6 +63,11 @@ export async function extractLines(page, scale, pageNo) {
   // other way round leaves the array bottom-to-top and every downstream step
   // that compares a line with the one that follows it silently breaks.
   segs.sort((a, b) => (a.y - b.y) || (a.x - b.x))
+  return { segs, width: vp.width, height: vp.height }
+}
+
+// Runs that share a baseline, in reading order.
+export function groupRows(segs) {
 
   const groups = []
   let cur = null
@@ -76,6 +83,12 @@ export async function extractLines(page, scale, pageNo) {
     }
   }
   if (cur) groups.push(cur)
+  return groups
+}
+
+export async function extractLines(page, scale, pageNo) {
+  const { segs } = await pageSegments(page, scale)
+  const groups = groupRows(segs)
 
   const lines = []
   let li = 0

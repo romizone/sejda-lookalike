@@ -117,3 +117,48 @@ export async function extractImages(bytes, { baseName }, onProgress) {
   if (!files.length) throw new Error('No pictures were found inside this PDF.')
   return files
 }
+
+// Redaction has to remove the words, not merely cover them. A page that carries
+// a mark is therefore rebuilt as a picture of itself with the marks painted in,
+// which leaves nothing underneath to select or search. Pages nobody marked are
+// copied across untouched and keep their text.
+export async function redactPdf(bytes, marksByPage, { dpi = 150 } = {}, onProgress) {
+  const { PDFDocument } = await import('pdf-lib')
+  const src = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false })
+  const out = await PDFDocument.create()
+
+  const clone = new Uint8Array(bytes.byteLength)
+  clone.set(new Uint8Array(bytes))
+  const view = await pdfjs.getDocument({ data: clone }).promise
+
+  const count = src.getPageCount()
+  let flattened = 0
+
+  for (let i = 0; i < count; i++) {
+    const marks = marksByPage[i]
+    if (!marks || !marks.length) {
+      const [copied] = await out.copyPages(src, [i])
+      out.addPage(copied)
+      onProgress?.((i + 1) / count)
+      continue
+    }
+
+    const page = await view.getPage(i + 1)
+    const canvas = await renderPage(page, dpi)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#000000'
+    for (const m of marks) {
+      ctx.fillRect(m.x * canvas.width, m.y * canvas.height, m.w * canvas.width, m.h * canvas.height)
+    }
+    const jpg = await toBytes(canvas, 'image/jpeg', 0.9)
+    const { width, height } = src.getPage(i).getSize()
+    const sheet = out.addPage([width, height])
+    const img = await out.embedJpg(jpg)
+    sheet.drawImage(img, { x: 0, y: 0, width, height })
+    flattened++
+    onProgress?.((i + 1) / count)
+  }
+
+  const blob = new Blob([await out.save({ useObjectStreams: false })], { type: 'application/pdf' })
+  return { blob, flattened }
+}
