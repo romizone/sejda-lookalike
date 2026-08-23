@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🌐 Try the live app
+    url: https://pdf.rominur.com
+    about: Reproduce the issue on the deployed build first
+  - name: 🔐 Report a security issue
+    url: https://github.com/romizone/sejda-lookalike/blob/main/SECURITY.md
+    about: Please report vulnerabilities privately, not as a public issue
+  - name: 📄 Technical paper
+    url: https://rominur.com/EditPDF_Paper.html
+    about: How the architecture and its trade-offs work
