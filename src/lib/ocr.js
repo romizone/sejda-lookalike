@@ -81,7 +81,7 @@ function toLines(data, pageKey, scale) {
   return lines
 }
 
-export async function ocrPage(pdfPage, pageKey, langs, onProgress) {
+export async function ocrPage(pdfPage, pageKey, langs, onProgress, { group = true } = {}) {
   const { createWorker } = await import('tesseract.js')
   const scale = ocrScaleFor(pdfPage)
   const canvas = await renderForOcr(pdfPage, scale)
@@ -99,7 +99,8 @@ export async function ocrPage(pdfPage, pageKey, langs, onProgress) {
       if (err instanceof SyntaxError) return []
       throw err
     }
-    return groupParagraphs(toLines(data, pageKey, scale), pageKey)
+    const lines = toLines(data, pageKey, scale)
+    return group ? groupParagraphs(lines, pageKey) : lines
   } finally {
     try { await worker.terminate() } catch {}
   }

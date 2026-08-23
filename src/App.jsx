@@ -20,6 +20,7 @@ import { NUpTool, FlattenTool, ImagesToPdfTool, MetadataTool } from './component
 import { ProtectTool, UnlockTool, RepairTool } from './components/tools/SecurityTools'
 import ExcelTool from './components/tools/ExcelTool'
 import RedactTool from './components/tools/RedactTool'
+import OcrTool from './components/tools/OcrTool'
 import { toolById } from './tools'
 import Header from './components/Header'
 import Toolbar from './components/Toolbar'
@@ -355,6 +356,7 @@ export default function App() {
       case 'unlock': return <UnlockTool tool={tool} onBack={goHome} />
       case 'redact': return <RedactTool tool={tool} onBack={goHome} />
       case 'repair': return <RepairTool tool={tool} onBack={goHome} />
+      case 'ocr': return <OcrTool tool={tool} onBack={goHome} />
       default: return null
     }
   }

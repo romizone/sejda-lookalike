@@ -16,6 +16,7 @@ export const GROUPS = [
   'Most popular',
   'Organise pages',
   'Edit & sign',
+  'Compress & scans',
   'Convert from PDF',
   'Convert to PDF',
   'Security',
@@ -107,6 +108,12 @@ export const TOOLS = [
     icon: svg(<><path d="M4 8h16" /><path d="M4 12h16" /><path d="M4 16h16" /><path d="m12 2 3 4H9z" /></>)
   },
 
+  {
+    id: 'ocr', group: 'Compress & scans', ...PINK,
+    name: 'OCR',
+    blurb: 'Convert PDF scans to searchable text and PDFs. Extract text from scans',
+    icon: svg(<><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" /><path d="M8 15V9h1.6a2 2 0 0 1 0 4H8m8-4h-2.2a1.4 1.4 0 0 0 0 2.8h.9a1.4 1.4 0 0 1 0 2.8H12" /></>)
+  },
   {
     id: 'toimages', group: 'Convert from PDF', ...ORANGE,
     name: 'PDF To JPG', blurb: 'Turn each page into a JPG or PNG picture',
