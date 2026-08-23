@@ -165,3 +165,64 @@ export function Result({ text, onReset }) {
     </div>
   )
 }
+
+const RotIcon = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 5v6h-6" /></svg>
+)
+const XIcon = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round"><path d="M6 6l12 12M18 6 6 18" /></svg>
+)
+
+// Thumbnails that can be spun, dropped and dragged into a new order.
+export function PageBoard({ doc, entries, onChange, allowReorder = true, allowRemove = true }) {
+  const [from, setFrom] = useState(null)
+  const [over, setOver] = useState(null)
+
+  const rotate = (i, deg) => onChange(entries.map((e, j) =>
+    j === i ? { ...e, rotate: ((((e.rotate || 0) + deg) % 360) + 360) % 360 } : e))
+
+  const remove = i => {
+    if (entries.length <= 1) return
+    onChange(entries.filter((_, j) => j !== i))
+  }
+
+  const move = (a, b) => {
+    if (a == null || a === b) return
+    const copy = entries.slice()
+    const [m] = copy.splice(a, 1)
+    copy.splice(b, 0, m)
+    onChange(copy)
+  }
+
+  return (
+    <div className="tool-grid board">
+      {entries.map((e, i) => {
+        const swap = (e.rotate || 0) % 180 !== 0
+        return (
+          <div
+            key={e.key}
+            className={`tool-page board-page ${over === i ? 'drop' : ''}`}
+            draggable={allowReorder}
+            onDragStart={() => setFrom(i)}
+            onDragOver={ev => { ev.preventDefault(); setOver(i) }}
+            onDragLeave={() => setOver(null)}
+            onDrop={ev => { ev.preventDefault(); move(from, i); setFrom(null); setOver(null) }}
+            onDragEnd={() => { setFrom(null); setOver(null) }}
+          >
+            <div className={`board-frame ${swap ? 'swap' : ''}`}>
+              <div style={{ transform: `rotate(${e.rotate || 0}deg)` }}>
+                <PageThumb doc={doc} index={e.src} width={116} />
+              </div>
+            </div>
+            <span className="tool-page-num">{i + 1}</span>
+            <div className="board-tools">
+              <button title="Rotate left" onClick={() => rotate(i, -90)} style={{ transform: 'scaleX(-1)' }}>{RotIcon}</button>
+              <button title="Rotate right" onClick={() => rotate(i, 90)}>{RotIcon}</button>
+              {allowRemove && <button title="Remove page" onClick={() => remove(i)}>{XIcon}</button>}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}

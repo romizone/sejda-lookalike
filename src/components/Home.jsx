@@ -1,5 +1,5 @@
 import React from 'react'
-import { TOOLS } from '../tools'
+import { GROUPS, TOOLS } from '../tools'
 
 export default function Home({ onOpen }) {
   return (
@@ -21,15 +21,24 @@ export default function Home({ onOpen }) {
         own machine. Your file never leaves your device.
       </p>
 
-      <div className="home-grid">
-        {TOOLS.map(t => (
-          <button key={t.id} className="home-card" onClick={() => onOpen(t.id)}>
-            <span className="home-ic" style={{ background: t.tint, color: t.ink }}>{t.icon}</span>
-            <span className="home-name">{t.name}</span>
-            <span className="home-blurb">{t.blurb}</span>
-          </button>
-        ))}
-      </div>
+      {GROUPS.map(group => {
+        const tools = TOOLS.filter(t => t.group === group)
+        if (!tools.length) return null
+        return (
+          <section className="home-section" key={group}>
+            <h2 className="home-group">{group}</h2>
+            <div className="home-grid">
+              {tools.map(t => (
+                <button key={t.id} className="home-card" onClick={() => onOpen(t.id)}>
+                  <span className="home-ic" style={{ background: t.tint, color: t.ink }}>{t.icon}</span>
+                  <span className="home-name">{t.name}</span>
+                  <span className="home-blurb">{t.blurb}</span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )
+      })}
 
       <div className="privacy">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>

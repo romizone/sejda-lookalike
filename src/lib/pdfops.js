@@ -228,3 +228,220 @@ export async function compressPdf(bytes, { quality = 0.62, maxSide = 1800 } = {}
   const out = await doc.save({ useObjectStreams: true })
   return { blob: new Blob([out], { type: 'application/pdf' }), images: images.length }
 }
+
+/* ---------- organise: rotate, reorder, drop ---------- */
+
+// entries: [{ src, rotate }] in the order the result should have
+export async function organisePages(bytes, entries) {
+  const { PDFDocument, degrees } = await import('pdf-lib')
+  const src = await load(bytes)
+  const kept = entries.filter(e => e.src != null)
+  if (!kept.length) throw new Error('At least one page has to stay.')
+
+  const out = await PDFDocument.create()
+  const copied = await out.copyPages(src, kept.map(e => e.src))
+  copied.forEach((page, i) => {
+    const base = page.getRotation().angle
+    page.setRotation(degrees((((base + (kept[i].rotate || 0)) % 360) + 360) % 360))
+    out.addPage(page)
+  })
+  return asBlob(out)
+}
+
+/* ---------- several pages onto one sheet ---------- */
+
+export async function nUpPdf(bytes, { perSheet = 2, gap = 8, margin = 18 }) {
+  const { PDFDocument } = await import('pdf-lib')
+  const src = await load(bytes)
+  const out = await PDFDocument.create()
+  const count = src.getPageCount()
+  const embedded = await out.embedPages(src.getPages())
+
+  const layouts = { 2: [2, 1], 4: [2, 2], 6: [2, 3], 8: [2, 4], 9: [3, 3], 16: [4, 4] }
+  const [cols, rows] = layouts[perSheet] || [2, 2]
+
+  const first = src.getPage(0).getSize()
+  // Two side by side wants a landscape sheet; the taller grids stay portrait.
+  const landscape = cols > rows
+  const sheetW = landscape ? Math.max(first.width, first.height) : Math.min(first.width, first.height)
+  const sheetH = landscape ? Math.min(first.width, first.height) : Math.max(first.width, first.height)
+
+  const cellW = (sheetW - margin * 2 - gap * (cols - 1)) / cols
+  const cellH = (sheetH - margin * 2 - gap * (rows - 1)) / rows
+
+  for (let i = 0; i < count; i += cols * rows) {
+    const sheet = out.addPage([sheetW, sheetH])
+    for (let slot = 0; slot < cols * rows && i + slot < count; slot++) {
+      const page = embedded[i + slot]
+      const col = slot % cols
+      const row = Math.floor(slot / cols)
+      const scale = Math.min(cellW / page.width, cellH / page.height)
+      const w = page.width * scale
+      const h = page.height * scale
+      const x = margin + col * (cellW + gap) + (cellW - w) / 2
+      const y = sheetH - margin - row * (cellH + gap) - cellH + (cellH - h) / 2
+      sheet.drawPage(page, { x, y, xScale: scale, yScale: scale })
+    }
+  }
+  return asBlob(out)
+}
+
+/* ---------- stamps: watermark, page numbers, header and footer ---------- */
+
+const POSITIONS = ['top-left', 'top-center', 'top-right', 'bottom-left', 'bottom-center', 'bottom-right']
+
+function placeText(page, text, font, size, position, margin) {
+  const { width, height } = page.getSize()
+  const w = font.widthOfTextAtSize(text, size)
+  const top = position.startsWith('top')
+  const y = top ? height - margin - size : margin
+  let x = margin
+  if (position.endsWith('center')) x = (width - w) / 2
+  else if (position.endsWith('right')) x = width - margin - w
+  return { x, y }
+}
+
+export async function stampPdf(bytes, opts) {
+  const { rgb, degrees } = await import('pdf-lib')
+  const { pickFont } = await import('./textfont')
+  const doc = await load(bytes)
+  const pages = doc.getPages()
+  const total = pages.length
+  const only = opts.pages && opts.pages.length ? new Set(opts.pages) : null
+
+  const hex = c => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(c || '#666666')
+    const n = m ? parseInt(m[1], 16) : 0x666666
+    return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255)
+  }
+
+  const fill = (tpl, i) =>
+    String(tpl || '')
+      .replace(/\{n\}/g, String(i + 1 + (opts.startAt ?? 1) - 1))
+      .replace(/\{total\}/g, String(total))
+
+  // Every text that may be drawn is collected first so one font covers them all.
+  const sample = [opts.text, opts.format, opts.headerLeft, opts.headerCenter, opts.headerRight,
+    opts.footerLeft, opts.footerCenter, opts.footerRight].filter(Boolean).join(' ')
+  const { font, encode } = await pickFont(doc, sample, { bold: !!opts.bold })
+
+  pages.forEach((page, i) => {
+    if (only && !only.has(i)) return
+    const { width, height } = page.getSize()
+
+    if (opts.kind === 'watermark' && opts.text) {
+      const text = encode(opts.text)
+      const size = opts.size || Math.min(width, height) / 8
+      const w = font.widthOfTextAtSize(text, size)
+      const angle = opts.angle ?? 45
+      const rad = (angle * Math.PI) / 180
+      // Rotation happens about the anchor, so the anchor is offset by half the
+      // rotated run to leave the text centred on the page.
+      const x = width / 2 - (w / 2) * Math.cos(rad) + (size / 3) * Math.sin(rad)
+      const y = height / 2 - (w / 2) * Math.sin(rad) - (size / 3) * Math.cos(rad)
+      page.drawText(text, {
+        x, y, size, font,
+        color: hex(opts.color),
+        opacity: opts.opacity ?? 0.18,
+        rotate: degrees(angle)
+      })
+      return
+    }
+
+    if (opts.kind === 'numbers') {
+      const text = encode(fill(opts.format || '{n}', i))
+      if (!text.trim()) return
+      const size = opts.size || 10
+      const { x, y } = placeText(page, text, font, size, opts.position || 'bottom-center', opts.margin ?? 28)
+      page.drawText(text, { x, y, size, font, color: hex(opts.color) })
+      return
+    }
+
+    if (opts.kind === 'headerFooter') {
+      const size = opts.size || 9
+      const margin = opts.margin ?? 24
+      const rows = [
+        ['top-left', opts.headerLeft], ['top-center', opts.headerCenter], ['top-right', opts.headerRight],
+        ['bottom-left', opts.footerLeft], ['bottom-center', opts.footerCenter], ['bottom-right', opts.footerRight]
+      ]
+      for (const [pos, tpl] of rows) {
+        const text = encode(fill(tpl, i))
+        if (!text.trim()) continue
+        const { x, y } = placeText(page, text, font, size, pos, margin)
+        page.drawText(text, { x, y, size, font, color: hex(opts.color) })
+      }
+    }
+  })
+
+  return asBlob(doc)
+}
+
+export { POSITIONS }
+
+/* ---------- forms ---------- */
+
+export async function flattenPdf(bytes) {
+  const doc = await load(bytes)
+  let fields = 0
+  try {
+    const form = doc.getForm()
+    fields = form.getFields().length
+    form.flatten()
+  } catch (e) {
+    throw new Error('This document has no form fields to flatten.')
+  }
+  if (!fields) throw new Error('This document has no form fields to flatten.')
+  return { blob: await asBlob(doc), fields }
+}
+
+/* ---------- images in, metadata ---------- */
+
+export async function imagesToPdf(items, { fit = 'image', margin = 0 }) {
+  const { PDFDocument } = await import('pdf-lib')
+  const out = await PDFDocument.create()
+  const A4 = [595.28, 841.89]
+
+  for (const item of items) {
+    const bin = new Uint8Array(item.bytes)
+    const img = bin[0] === 0x89 && bin[1] === 0x50 ? await out.embedPng(bin) : await out.embedJpg(bin)
+    if (fit === 'image') {
+      const page = out.addPage([img.width + margin * 2, img.height + margin * 2])
+      page.drawImage(img, { x: margin, y: margin, width: img.width, height: img.height })
+    } else {
+      const portrait = img.height >= img.width
+      const [pw, ph] = portrait ? A4 : [A4[1], A4[0]]
+      const page = out.addPage([pw, ph])
+      const scale = Math.min((pw - margin * 2) / img.width, (ph - margin * 2) / img.height)
+      const w = img.width * scale
+      const h = img.height * scale
+      page.drawImage(img, { x: (pw - w) / 2, y: (ph - h) / 2, width: w, height: h })
+    }
+  }
+  if (!out.getPageCount()) throw new Error('No images to place.')
+  return asBlob(out)
+}
+
+export async function readMetadata(bytes) {
+  const doc = await load(bytes)
+  const safe = fn => { try { return fn() || '' } catch { return '' } }
+  return {
+    title: safe(() => doc.getTitle()),
+    author: safe(() => doc.getAuthor()),
+    subject: safe(() => doc.getSubject()),
+    keywords: safe(() => (doc.getKeywords() || '')),
+    creator: safe(() => doc.getCreator()),
+    producer: safe(() => doc.getProducer())
+  }
+}
+
+export async function writeMetadata(bytes, meta) {
+  const doc = await load(bytes)
+  const set = (fn, v) => { try { fn(v ?? '') } catch {} }
+  set(v => doc.setTitle(v), meta.title)
+  set(v => doc.setAuthor(v), meta.author)
+  set(v => doc.setSubject(v), meta.subject)
+  set(v => doc.setKeywords(String(meta.keywords || '').split(/[,;]\s*/).filter(Boolean)), meta.keywords)
+  set(v => doc.setCreator(v), meta.creator)
+  set(v => doc.setProducer(v), meta.producer)
+  return asBlob(doc)
+}

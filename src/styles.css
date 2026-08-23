@@ -704,3 +704,34 @@ input, select { font-family: inherit; color: inherit; }
   color: var(--sub);
 }
 .header-home:hover { background: #f2f4f2; color: var(--ink); }
+
+/* page board */
+.tool-grid.board { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.board-page { cursor: grab; padding: 10px 8px 8px; }
+.board-page.drop { outline: 2px solid var(--green); outline-offset: 2px; }
+.board-frame { display: grid; place-items: center; width: 116px; height: 150px; overflow: hidden; }
+.board-frame.swap { width: 150px; height: 116px; }
+.board-tools { display: flex; gap: 4px; margin-top: 6px; }
+.board-tools button {
+  width: 26px; height: 24px;
+  display: grid; place-items: center;
+  border-radius: 6px;
+  background: #f2f4f2;
+  color: var(--sub);
+}
+.board-tools button:hover { background: #e6eae6; color: var(--ink); }
+
+.home-section { width: 100%; max-width: 1000px; margin-bottom: 34px; }
+.home-group {
+  margin: 0 0 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #a08c73;
+}
+.field-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+.field-row .tool-field { margin-bottom: 14px; }
+.tool-input.wide { min-width: 300px; }
+.hf-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 4px 16px; }
+.tool-options.nup { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }

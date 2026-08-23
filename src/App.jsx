@@ -13,6 +13,10 @@ import MergeTool from './components/tools/MergeTool'
 import CropTool from './components/tools/CropTool'
 import CompressTool from './components/tools/CompressTool'
 import WordTool from './components/tools/WordTool'
+import OrganiseTool from './components/tools/OrganiseTool'
+import StampTool from './components/tools/StampTool'
+import ExportTool from './components/tools/ExportTool'
+import { NUpTool, FlattenTool, ImagesToPdfTool, MetadataTool } from './components/tools/SmallTools'
 import { toolById } from './tools'
 import Header from './components/Header'
 import Toolbar from './components/Toolbar'
@@ -331,6 +335,18 @@ export default function App() {
       case 'crop': return <CropTool tool={tool} onBack={goHome} />
       case 'compress': return <CompressTool tool={tool} onBack={goHome} />
       case 'word': return <WordTool tool={tool} onBack={goHome} />
+      case 'organise': return <OrganiseTool tool={tool} mode="organise" onBack={goHome} />
+      case 'rotate': return <OrganiseTool tool={tool} mode="rotate" onBack={goHome} />
+      case 'nup': return <NUpTool tool={tool} onBack={goHome} />
+      case 'watermark': return <StampTool tool={tool} kind="watermark" onBack={goHome} />
+      case 'numbers': return <StampTool tool={tool} kind="numbers" onBack={goHome} />
+      case 'headerFooter': return <StampTool tool={tool} kind="headerFooter" onBack={goHome} />
+      case 'flatten': return <FlattenTool tool={tool} onBack={goHome} />
+      case 'toimages': return <ExportTool tool={tool} kind="pages" onBack={goHome} />
+      case 'totext': return <ExportTool tool={tool} kind="text" onBack={goHome} />
+      case 'getimages': return <ExportTool tool={tool} kind="images" onBack={goHome} />
+      case 'topdf': return <ImagesToPdfTool tool={tool} onBack={goHome} />
+      case 'metadata': return <MetadataTool tool={tool} onBack={goHome} />
       default: return null
     }
   }
