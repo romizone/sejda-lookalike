@@ -1,6 +1,6 @@
 import React, { useRef } from 'react'
 import { ACT } from '../store'
-import Menu from './Menu'
+import Menu, { MenuBar } from './Menu'
 
 const I = {
   cursor: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="M5 3l14 8-6.5 1.5L9 19z" /></svg>,
@@ -55,6 +55,7 @@ export default function Toolbar({ state, dispatch, pageOps }) {
   )
 
   return (
+    <MenuBar>
     <div className="toolbar">
       {plain('select', 'Select', I.cursor)}
       <div className="tb-sep" />
@@ -116,14 +117,14 @@ export default function Toolbar({ state, dispatch, pageOps }) {
         label="Pages"
         icon={I.pages}
         items={[
-          { key: 'rl', label: 'Rotate left', hint: '⟲', run: () => pageOps.rotate(cur, -90) },
-          { key: 'rr', label: 'Rotate right', hint: '⟳', run: () => pageOps.rotate(cur, 90) },
+          { key: 'rl', label: 'Rotate left', run: () => pageOps.rotate(cur, -90) },
+          { key: 'rr', label: 'Rotate right', run: () => pageOps.rotate(cur, 90) },
           { key: 's1', sep: true },
           { key: 'ib', label: 'Insert blank page', run: () => pageOps.insertBlank(cur) },
           { key: 'ml', label: 'Move page up', run: () => pageOps.move(cur, cur - 1) },
           { key: 'mr', label: 'Move page down', run: () => pageOps.move(cur, cur + 1) },
           { key: 's2', sep: true },
-          { key: 'del', label: 'Delete page', run: () => pageOps.remove(cur) }
+          { key: 'del', label: 'Delete page', danger: true, run: () => pageOps.remove(cur) }
         ]}
       />
 
@@ -150,5 +151,6 @@ export default function Toolbar({ state, dispatch, pageOps }) {
 
       <input ref={imgInput} type="file" accept="image/*" className="hidden-input" onChange={onImgFile} />
     </div>
+    </MenuBar>
   )
 }
