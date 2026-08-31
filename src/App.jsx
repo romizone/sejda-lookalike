@@ -45,6 +45,7 @@ export default function App() {
     dispatch({ type: ACT.OPEN_START })
     try {
       const myDoc = { canvases: {}, pagesMap: {}, pageDims: {}, widgets: {}, linkPages: {}, dpr: 1, gen: (docRef.current?.gen || 0) + 1 }
+      try { docRef.current.pdf?.destroy() } catch {}
       docRef.current = myDoc
       const clone = new Uint8Array(bytes.byteLength)
       clone.set(new Uint8Array(bytes))
@@ -237,8 +238,17 @@ export default function App() {
     }
   }
 
+  const exporting = useRef(false)
+
+  const dropDoc = () => {
+    try { docRef.current.pdf?.destroy() } catch {}
+    docRef.current = { canvases: {}, pagesMap: {}, pageDims: {}, widgets: {}, linkPages: {}, dpr: 1 }
+  }
+
   const applyChanges = async () => {
     const s = stateRef.current
+    if (exporting.current || s.phase !== 'editor') return
+    exporting.current = true
     dispatch({ type: ACT.BUSY, msg: 'Preparing your PDF…' })
     await new Promise(r => setTimeout(r, 30))
     try {
@@ -265,7 +275,19 @@ export default function App() {
       console.error(err)
       dispatch({ type: ACT.BUSY, msg: null })
       alert('Export failed: ' + (err?.message || err))
+    } finally {
+      exporting.current = false
     }
+  }
+
+  const typingInField = el => {
+    if (!el) return false
+    if (el.isContentEditable) return true
+    const tag = el.tagName
+    if (tag === 'TEXTAREA' || tag === 'SELECT') return true
+    if (tag !== 'INPUT') return false
+    const t = (el.type || 'text').toLowerCase()
+    return !['button', 'submit', 'checkbox', 'radio', 'file', 'reset', 'range', 'color', 'hidden'].includes(t)
   }
 
   useEffect(() => {
@@ -280,8 +302,7 @@ export default function App() {
         if (stateRef.current.phase === 'editor') applyChanges()
         return
       }
-      const editing = document.activeElement?.isContentEditable
-      if (editing) return
+      if (typingInField(document.activeElement)) return
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         dispatch({ type: e.shiftKey ? ACT.REDO : ACT.UNDO })
@@ -310,8 +331,18 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
   }, [])
 
-  const restart = () => dispatch({ type: ACT.RESET })
-  const goHome = () => { dispatch({ type: ACT.RESET }); setIntent(null); setView('home') }
+  const leaveEditor = () => {
+    if (stateRef.current.dirty && !window.confirm('You have unsaved edits. Discard them?')) return false
+    dropDoc()
+    dispatch({ type: ACT.RESET })
+    return true
+  }
+  const restart = () => { leaveEditor() }
+  const goHome = () => {
+    if (!leaveEditor()) return
+    setIntent(null)
+    setView('home')
+  }
 
   const openTool = id => {
     if (id === 'editor' || id === 'sign' || id === 'forms') {

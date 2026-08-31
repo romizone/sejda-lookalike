@@ -381,7 +381,7 @@ function caretFromPoint(el, pt) {
   return false
 }
 
-export default function PageView({ idx, src, pos, rotate = 0, pdfPage, zoom, pageState, tool, activeText, selection, pendingImage, formValues, dispatch, ACT, docRef }) {
+export default function PageView({ idx, src, size, pos, rotate = 0, pdfPage, zoom, pageState, tool, activeText, selection, pendingImage, formValues, dispatch, ACT, docRef }) {
   const holderRef = useRef(null)
   const overlayRef = useRef(null)
   const canvasRef = useRef(null)
@@ -391,7 +391,11 @@ export default function PageView({ idx, src, pos, rotate = 0, pdfPage, zoom, pag
   const pendingPointRef = useRef(null)
   const pendingCaretRef = useRef(null)
 
-  const dims = docRef.pageDims?.[src] || { w: 595 * BASE_SCALE, h: 842 * BASE_SCALE }
+  const fromPdf = src != null ? docRef.pageDims?.[src] : null
+  const dims = fromPdf || {
+    w: (size?.[0] || 595) * BASE_SCALE,
+    h: (size?.[1] || 842) * BASE_SCALE
+  }
   const W = dims.w
   const H = dims.h
 

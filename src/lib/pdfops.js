@@ -7,6 +7,22 @@ const load = async bytes => {
 
 const asBlob = async doc => new Blob([await doc.save({ useObjectStreams: false })], { type: 'application/pdf' })
 
+async function embedRaster(doc, bytes) {
+  const bin = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  if (bin[0] === 0x89 && bin[1] === 0x50) return doc.embedPng(bin)
+  if (bin[0] === 0xff && bin[1] === 0xd8) return doc.embedJpg(bin)
+  const blob = new Blob([bin])
+  const bmp = await createImageBitmap(blob)
+  const canvas = document.createElement('canvas')
+  canvas.width = bmp.width
+  canvas.height = bmp.height
+  canvas.getContext('2d').drawImage(bmp, 0, 0)
+  bmp.close?.()
+  const png = await new Promise(r => canvas.toBlob(r, 'image/png'))
+  if (!png) throw new Error('That image could not be read.')
+  return doc.embedPng(new Uint8Array(await png.arrayBuffer()))
+}
+
 /* ---------- page selection ---------- */
 
 export async function deletePages(bytes, remove) {
@@ -106,10 +122,7 @@ export async function mergeDocuments(items, onProgress) {
   let done = 0
   for (const item of items) {
     if (item.kind === 'image') {
-      const bin = new Uint8Array(item.bytes)
-      let img
-      if (bin[0] === 0x89 && bin[1] === 0x50) img = await out.embedPng(bin)
-      else img = await out.embedJpg(bin)
+      const img = await embedRaster(out, item.bytes)
       const page = out.addPage([img.width, img.height])
       page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height })
     } else {
@@ -404,8 +417,7 @@ export async function imagesToPdf(items, { fit = 'image', margin = 0 }) {
   const A4 = [595.28, 841.89]
 
   for (const item of items) {
-    const bin = new Uint8Array(item.bytes)
-    const img = bin[0] === 0x89 && bin[1] === 0x50 ? await out.embedPng(bin) : await out.embedJpg(bin)
+    const img = await embedRaster(out, item.bytes)
     if (fit === 'image') {
       const page = out.addPage([img.width + margin * 2, img.height + margin * 2])
       page.drawImage(img, { x: margin, y: margin, width: img.width, height: img.height })

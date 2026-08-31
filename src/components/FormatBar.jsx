@@ -18,6 +18,7 @@ export default function FormatBar({ state, dispatch }) {
 
   const patch = p => {
     if (!target) return
+    dispatch({ type: ACT.PUSH })
     dispatch({ type: ACT.TEXT_PATCH, page: target.page, kind: target.kind, id: target.id, patch: p })
   }
 

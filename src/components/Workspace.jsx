@@ -52,6 +52,7 @@ export default function Workspace({ state, dispatch, docRef, pageOps }) {
               <PageView
                 idx={entry.key}
                 src={entry.src}
+                size={entry.size}
                 pos={i}
                 rotate={entry.rotate || 0}
                 pdfPage={entry.src == null ? null : docRef.pagesMap?.[entry.src]}

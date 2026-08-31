@@ -83,7 +83,7 @@ export function reducer(s, a) {
     case ACT.SET_LINES:
       return withPage(s, a.page, p => ({ lines: a.lines }))
     case ACT.SET_TOOL:
-      return { ...s, tool: a.tool, selection: null }
+      return { ...s, tool: a.tool, selection: null, activeText: null }
     case ACT.PUSH: {
       const top = s.past[s.past.length - 1]
       const snap = { pages: s.pages, pageOrder: s.pageOrder, formValues: s.formValues }

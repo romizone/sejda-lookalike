@@ -23,6 +23,7 @@ async function convertToPng(doc, src) {
   c.width = imgEl.naturalWidth; c.height = imgEl.naturalHeight
   c.getContext('2d').drawImage(imgEl, 0, 0)
   const blob = await new Promise(r => c.toBlob(r, 'image/png'))
+  if (!blob) return null
   const buf = new Uint8Array(await blob.arrayBuffer())
   return doc.embedPng(buf)
 }

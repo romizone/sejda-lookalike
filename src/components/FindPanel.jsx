@@ -79,7 +79,7 @@ export default function FindPanel({ state, dispatch, onGoTo }) {
         page: h.page,
         kind,
         id: h.id,
-        patch: { text: (item.text || '').replace(re, replacement) }
+        patch: { text: (item.text || '').replace(re, replacement), runs: undefined }
       })
     }
     setCursor(0)
