@@ -85,7 +85,10 @@ export async function makeSamplePdf() {
 
   p2.drawRectangle({ x: 50, y: y - 66, width: 495, height: 74, color: rgb(0.93, 0.96, 0.99), borderColor: rgb(0.47, 0.67, 0.9), borderWidth: 1 })
   p2.drawText('TIP', { x: 64, y: y - 12, size: 10, font: helvB, color: rgb(0.15, 0.4, 0.75) })
-  const tip = 'Use the Whiteout tool to cleanly remove sensitive information before sharing a document.'
+  // What the tip promises has to be what the export does: text under a whiteout
+  // leaves the file, the pixels of a picture under it do not. Two lines fit the
+  // box comfortably; a fourth would run out of it.
+  const tip = 'The Whiteout tool takes the text it covers out of the file, not just out of sight. A picture or a scan is only painted over - use the Redact tool for those before sharing.'
   let ty = y - 34
   for (const ln of wrap(helv, tip, 10.5, 440)) {
     p2.drawText(ln, { x: 64, y: ty, size: 10.5, font: helv, color: dark })

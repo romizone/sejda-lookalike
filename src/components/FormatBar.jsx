@@ -77,8 +77,12 @@ export default function FormatBar({ state, dispatch }) {
     dispatch({ type: ACT.OBJ_PATCH, page: selection.page, id: selObj.id, patch: p })
   }
 
+  // A delete is a step of its own. Without a snapshot taken right here, undo
+  // would skip past it to whichever edit happened to be recorded last and take
+  // that one back as well.
   const remove = () => {
     if (target && target.kind === 'obj') {
+      dispatch({ type: ACT.PUSH })
       dispatch({ type: ACT.OBJ_REMOVE, page: target.page, id: target.id })
       dispatch({ type: ACT.TEXT_DEACTIVATE })
     } else if (target && target.kind === 'line') {
@@ -86,14 +90,27 @@ export default function FormatBar({ state, dispatch }) {
       dispatch({ type: ACT.OBJ_REMOVE, page: target.page, id: '__none__', lineId: target.id })
       dispatch({ type: ACT.TEXT_DEACTIVATE })
     } else if (selObj) {
+      dispatch({ type: ACT.PUSH })
       dispatch({ type: ACT.OBJ_REMOVE, page: selection.page, id: selObj.id })
     }
+  }
+
+  // Pressing something on the bar must not take the caret and the selection
+  // out of the text being formatted, so the press is cancelled. Two things
+  // cannot work that way and go through instead: the fields of a selected
+  // object, which have to be clicked into before anything can be typed in
+  // them and have no selection to protect, and the font list, which only
+  // opens on an uncancelled press (PageView keeps the text active when focus
+  // moves here).
+  const keepSelection = e => {
+    if (e.target.closest(el ? 'select' : 'input, select')) return
+    e.preventDefault()
   }
 
   if (!el && !selObj) return null
 
   return (
-    <div className="formatbar" onMouseDown={e => e.preventDefault()}>
+    <div className="formatbar" onMouseDown={keepSelection}>
       {el && (
         <>
           <span className="fb-label">Font</span>

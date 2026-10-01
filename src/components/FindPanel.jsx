@@ -3,11 +3,21 @@ import { ACT } from '../store'
 
 const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
+const finder = (needle, caseSensitive) => new RegExp(escape(needle), caseSensitive ? 'g' : 'gi')
+
+// The replacement goes in through a function because String.replace reads a
+// plain string as a pattern of its own: "$$" would collapse to "$", and "$&"
+// would paste the match back in. Someone typing "US$$5" means exactly that.
+export function replaceLiteral(text, needle, replacement, caseSensitive) {
+  if (!needle) return text || ''
+  return (text || '').replace(finder(needle, caseSensitive), () => replacement)
+}
+
 // Pages are keyed by page-order entry, which is not a number once a blank page
 // has been inserted, so the walk follows the order rather than the key names.
-function matchesIn(pages, order, needle, caseSensitive) {
+export function matchesIn(pages, order, needle, caseSensitive) {
   if (!needle) return []
-  const re = new RegExp(escape(needle), caseSensitive ? 'g' : 'gi')
+  const re = finder(needle, caseSensitive)
   const out = []
   order.forEach((entry, pos) => {
     const pi = entry.key
@@ -62,7 +72,6 @@ export default function FindPanel({ state, dispatch, onGoTo }) {
 
   const replaceAll = () => {
     if (!needle || !hits.length) return
-    const re = new RegExp(escape(needle), caseSensitive ? 'g' : 'gi')
     dispatch({ type: ACT.PUSH })
     const seen = new Set()
     for (const h of hits) {
@@ -73,13 +82,12 @@ export default function FindPanel({ state, dispatch, onGoTo }) {
       const bag = kind === 'obj' ? state.pages[h.page].objects : state.pages[h.page].lines
       const item = bag.find(x => x.id === h.id)
       if (!item) continue
-      re.lastIndex = 0
       dispatch({
         type: ACT.TEXT_PATCH,
         page: h.page,
         kind,
         id: h.id,
-        patch: { text: (item.text || '').replace(re, replacement), runs: undefined }
+        patch: { text: replaceLiteral(item.text, needle, replacement, caseSensitive), runs: undefined }
       })
     }
     setCursor(0)

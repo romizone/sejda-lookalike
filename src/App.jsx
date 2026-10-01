@@ -3,7 +3,7 @@ import { reducer, initialState, ACT } from './store'
 import { BASE_SCALE, baseName, uid } from './utils/misc'
 import pdfjs from './lib/pdfjs'
 import { extractLines } from './lib/extract'
-import { exportEditedPdf } from './lib/exporter'
+import { exportEditedPdf, PROTECTED_MESSAGE } from './lib/exporter'
 import { makeSamplePdf } from './lib/sample'
 import Landing from './components/Landing'
 import Home from './components/Home'
@@ -33,6 +33,12 @@ import SignModal from './components/SignModal'
 import OcrModal from './components/OcrModal'
 import { ocrPage } from './lib/ocr'
 
+// A file with only an owner password opens without asking for one, and pdf.js
+// decrypts it for display - but nothing can be saved back into it.
+const isProtected = async doc => {
+  try { return !!(await doc.getMetadata()).info?.EncryptFilterName } catch { return false }
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const [view, setView] = useState('home')
@@ -51,6 +57,18 @@ export default function App() {
       clone.set(new Uint8Array(bytes))
       const doc = await pdfjs.getDocument({ data: clone }).promise
       if (docRef.current !== myDoc) return
+      // Said now rather than at the end of the user's work, when the export
+      // would have to refuse.
+      const locked = await isProtected(doc)
+      if (docRef.current !== myDoc) return
+      if (locked) {
+        try { doc.destroy() } catch {}
+        dispatch({
+          type: ACT.OPEN_FAIL,
+          error: PROTECTED_MESSAGE + ' If you have its password, remove the protection with the Unlock tool first, then edit the unlocked copy.'
+        })
+        return
+      }
       docRef.current.bytes = bytes
       docRef.current.pdf = doc
       dispatch({ type: ACT.OPEN_DONE, fileName, numPages: doc.numPages })
@@ -80,6 +98,8 @@ export default function App() {
 
   // Existing widgets stay live so forms can be filled in, and existing links
   // become ordinary objects so they can be edited or removed like new ones.
+  // linkPages remembers which annotations those were, so that saving replaces
+  // exactly them and leaves every other link in the document alone.
   const importAnnotations = async (page, vp, pi, myDoc) => {
     let annots = []
     try { annots = await page.getAnnotations({ intent: 'display' }) } catch { return }
@@ -99,6 +119,7 @@ export default function App() {
     const widgets = []
     const values = {}
     const links = []
+    const linkIds = []
 
     annots.forEach((a, ai) => {
       if (a.subtype === 'Widget' && a.fieldType) {
@@ -126,11 +147,12 @@ export default function App() {
         }
       } else if (a.subtype === 'Link' && a.url) {
         links.push({ id: `K${pi}_${ai}`, kind: 'link', url: a.url, imported: true, ...toBox(a.rect) })
+        linkIds.push(a.id)
       }
     })
 
     myDoc.widgets[pi] = widgets
-    myDoc.linkPages[pi] = true
+    myDoc.linkPages[pi] = linkIds
     if (Object.keys(values).length) dispatch({ type: ACT.FORM_SEED, values })
     if (links.length) dispatch({ type: ACT.OBJ_SEED, page: pi, objects: links })
   }
@@ -252,7 +274,7 @@ export default function App() {
     dispatch({ type: ACT.BUSY, msg: 'Preparing your PDF…' })
     await new Promise(r => setTimeout(r, 30))
     try {
-      const blob = await exportEditedPdf({
+      const { blob, warnings } = await exportEditedPdf({
         bytes: docRef.current.bytes,
         pages: s.pages,
         baseScale: BASE_SCALE,
@@ -260,7 +282,13 @@ export default function App() {
         dpr: docRef.current.dpr || 1,
         formValues: s.formValues,
         linkPages: docRef.current.linkPages || {},
-        pageOrder: s.pageOrder
+        pageOrder: s.pageOrder,
+        // The pages as pdf.js read them when the file was opened, which is what
+        // lets covered text be taken out of the file and not just painted
+        // over; openPdf reads the saved file back to see that it went.
+        pdfPages: docRef.current.pagesMap,
+        pdfjsLib: pdfjs,
+        openPdf: data => pdfjs.getDocument({ data }).promise
       })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -269,8 +297,17 @@ export default function App() {
       document.body.appendChild(a)
       a.click()
       a.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 4000)
+      const release = () => setTimeout(() => URL.revokeObjectURL(url), 4000)
       dispatch({ type: ACT.BUSY, msg: null })
+      // The file is on its way; what could not be written into it, or taken
+      // out of it, is said once the download has started and the busy overlay
+      // has cleared, because an alert freezes the page. The blob is only let go
+      // after the alert is closed, so reading it slowly cannot cost the download.
+      if (warnings.length) {
+        const note = 'Your PDF was saved, but not everything went as asked:\n\n' +
+          warnings.map(w => '• ' + w).join('\n')
+        setTimeout(() => { alert(note); release() }, 300)
+      } else release()
     } catch (err) {
       console.error(err)
       dispatch({ type: ACT.BUSY, msg: null })
@@ -312,6 +349,9 @@ export default function App() {
         const sel = stateRef.current.selection
         if (sel) {
           e.preventDefault()
+          // Without its own undo step, Undo would skip past the removal and
+          // take back whatever was done before it as well.
+          dispatch({ type: ACT.PUSH })
           dispatch({ type: ACT.OBJ_REMOVE, page: sel.page, id: sel.id })
         }
       }

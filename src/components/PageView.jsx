@@ -75,52 +75,58 @@ function LineBox({ ln, isActive, handlers }) {
   )
 }
 
+// A text object is the one kind of object that needs hooks, and hooks may not
+// sit behind the `kind` test in ObjBox, so it is a component of its own.
+function TextObjBox({ ob, isSel, isActive, handlers }) {
+  const tRef = useRef(null)
+  useSyncText(tRef, ob, isActive)
+  const fs = ob.fontSize
+  const lh = ob.lineHeight || fs * 1.2
+  const fam = fontCssOf(ob)
+  const st = {
+    left: ob.x,
+    top: topForBaseline(ob.baselineY ?? ob.y + fs * 0.8, fs, lh, fam),
+    width: ob.w || 260,
+    minWidth: 6,
+    minHeight: fs * 1.2,
+    fontSize: fs,
+    lineHeight: lh + 'px',
+    whiteSpace: 'pre-wrap',
+    overflowWrap: 'break-word',
+    fontFamily: fam,
+    color: ob.color || '#111111'
+  }
+  if (ob.bold) st.fontWeight = 700
+  if (ob.italic) st.fontStyle = 'italic'
+  if (ob.underline) st.textDecoration = 'underline'
+  return (
+    <div
+      ref={tRef}
+      className={`pobj textobj ${isSel ? 'selected' : ''} ${isActive ? 'active' : ''}`}
+      style={st}
+      data-id={ob.id}
+      contentEditable={isActive}
+      suppressContentEditableWarning
+      onPointerDown={e => handlers.textObjDown(e, ob)}
+      onFocus={handlers.onFocus}
+      onBlur={handlers.onBlur}
+      onInput={handlers.onInputObj}
+      onKeyDown={e => handlers.onKeyDown(e, ob, 'obj')}
+      onPaste={handlers.onPaste}
+    />
+  )
+}
+
 function ObjBox({ ob, isSel, isActive, idx, handlers }) {
+  if (ob.kind === 'text') {
+    return <TextObjBox ob={ob} isSel={isSel} isActive={isActive} handlers={handlers} />
+  }
+
   const base = {
     left: ob.x,
     top: ob.y,
     width: ob.w,
     height: ob.h
-  }
-
-  if (ob.kind === 'text') {
-    const tRef = useRef(null)
-    useSyncText(tRef, ob, isActive)
-    const fs = ob.fontSize
-    const lh = ob.lineHeight || fs * 1.2
-    const fam = fontCssOf(ob)
-    const st = {
-      left: ob.x,
-      top: topForBaseline(ob.baselineY ?? ob.y + fs * 0.8, fs, lh, fam),
-      width: ob.w || 260,
-      minWidth: 6,
-      minHeight: fs * 1.2,
-      fontSize: fs,
-      lineHeight: lh + 'px',
-      whiteSpace: 'pre-wrap',
-      overflowWrap: 'break-word',
-      fontFamily: fam,
-      color: ob.color || '#111111'
-    }
-    if (ob.bold) st.fontWeight = 700
-    if (ob.italic) st.fontStyle = 'italic'
-    if (ob.underline) st.textDecoration = 'underline'
-    return (
-      <div
-        ref={tRef}
-        className={`pobj textobj ${isSel ? 'selected' : ''} ${isActive ? 'active' : ''}`}
-        style={st}
-        data-id={ob.id}
-        contentEditable={isActive}
-        suppressContentEditableWarning
-        onPointerDown={e => handlers.textObjDown(e, ob)}
-        onFocus={handlers.onFocus}
-        onBlur={handlers.onBlur}
-        onInput={handlers.onInputObj}
-        onKeyDown={e => handlers.onKeyDown(e, ob, 'obj')}
-        onPaste={handlers.onPaste}
-      />
-    )
   }
 
   if (ob.kind === 'whiteout') {
@@ -390,6 +396,7 @@ export default function PageView({ idx, src, size, pos, rotate = 0, pdfPage, zoo
   const bandRef = useRef(null)
   const pendingPointRef = useRef(null)
   const pendingCaretRef = useRef(null)
+  const holdFocusRef = useRef(false)
 
   const fromPdf = src != null ? docRef.pageDims?.[src] : null
   const dims = fromPdf || {
@@ -581,7 +588,10 @@ export default function PageView({ idx, src, size, pos, rotate = 0, pdfPage, zoo
 
   const onFocus = () => push()
 
-  const onBlur = () => {
+  // Focus that moves into the format bar - its font list has to take it in
+  // order to open - is still work on this text, so the block stays active.
+  const onBlur = e => {
+    if (e.relatedTarget?.closest?.('.formatbar')) return
     if (activeText && activeText.page === idx) dispatch({ type: ACT.TEXT_DEACTIVATE })
   }
 
@@ -744,6 +754,14 @@ export default function PageView({ idx, src, size, pos, rotate = 0, pdfPage, zoo
     }
 
     if (tool === 'text') {
+      // What was pressed is the bare page, which cannot hold focus, so the
+      // browser's own handling of this press would take the focus straight
+      // back off the box created below and leave it empty and inactive.
+      // Cancelling the pointerdown stops that wherever it also suppresses the
+      // mousedown that follows; onOverlayMouseDown covers the rest.
+      e.preventDefault()
+      holdFocusRef.current = true
+      setTimeout(() => { holdFocusRef.current = false }, 0)
       push()
       const fs = 16
       const id = uid()
@@ -830,6 +848,12 @@ export default function PageView({ idx, src, size, pos, rotate = 0, pdfPage, zoo
     dispatch({ type: ACT.SELECT, sel: null })
   }
 
+  const onOverlayMouseDown = e => {
+    if (!holdFocusRef.current) return
+    holdFocusRef.current = false
+    e.preventDefault()
+  }
+
   const bandStyle = band ? {
     left: Math.min(band.x0, band.x1),
     top: Math.min(band.y0, band.y1),
@@ -860,7 +884,7 @@ export default function PageView({ idx, src, size, pos, rotate = 0, pdfPage, zoo
           }}
         >
           <canvas ref={canvasRef} className="pgcanvas" />
-          <div ref={overlayRef} className={`overlay tool-${tool}`} onPointerDown={onOverlayDown}>
+          <div ref={overlayRef} className={`overlay tool-${tool}`} onPointerDown={onOverlayDown} onMouseDown={onOverlayMouseDown}>
             {deadLines.map(ln => (
               <div
                 key={ln.id}

@@ -184,8 +184,24 @@ input, select { font-family: inherit; color: inherit; }
 .thumb-num { color: #b9bec3; font-size: 11px; text-align: center; margin-top: 4px; line-height: 1.4; }
 .thumb-wrap { display: flex; flex-direction: column; }
 
-.scroll-area { flex: 1; overflow: auto; position: relative; scroll-behavior: auto; }
-.pages-inner { display: flex; flex-direction: column; align-items: center; gap: 26px; padding: 34px 20px 90px; }
+/* Laid out as a column of two - the pages, then the bottom bar - so that the
+   bar's auto margin can park it at the foot of the area when the pages do not
+   fill it. */
+.scroll-area {
+  flex: 1; overflow: auto; position: relative; scroll-behavior: auto;
+  display: flex; flex-direction: column;
+}
+/* The column of pages is never narrower than the scroll area, so pages that
+   fit are centred in it, and it widens to its widest page when one does not.
+   A page too wide for the window then starts at the left padding and runs off
+   to the right, where the scrollbar can follow. Centring it in a column of the
+   window's width instead would hang half of the excess off the left edge, at
+   negative offsets that no scroll position reaches. */
+.pages-inner {
+  display: flex; flex-direction: column; align-items: center; gap: 26px;
+  flex: none; width: max-content; min-width: 100%;
+  padding: 34px 20px 50px;
+}
 
 .page-holder { position: relative; flex-shrink: 0; }
 .page-holder.placeholder { background: #63676b; border-radius: 3px; display: grid; place-items: center; color: #9aa0a5; font-size: 13px; }
@@ -239,8 +255,14 @@ input, select { font-family: inherit; color: inherit; }
 .band { position: absolute; background: rgba(37, 99, 235, 0.12); border: 1px solid var(--blue); pointer-events: none; z-index: 9; }
 
 /* bottom bar */
+/* It sits inside the scroll area, where an absolutely placed box travels with
+   the content and is gone after the first scroll in either direction. Sticky
+   keeps it pinned to the corner of the visible part instead. That puts its
+   own 40px into the flow below the pages, which is why .pages-inner leaves
+   50px of bottom padding rather than the full 90px of clearance. */
 .bottombar {
-  position: absolute; left: 14px; bottom: 14px;
+  position: sticky; left: 14px; bottom: 14px;
+  flex: none; align-self: flex-start; width: max-content; margin-top: auto;
   display: flex; align-items: center; gap: 2px;
   background: #2b2e31; color: #d6d9dc;
   border-radius: 10px; padding: 5px 8px;
@@ -738,7 +760,10 @@ input, select { font-family: inherit; color: inherit; }
 .tool-done > span { flex: 1; }
 
 .tool-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; font-size: 12.5px; color: var(--sub); font-weight: 600; }
-.tool-select { height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 13.5px; color: var(--ink); }
+/* Tied to the element on purpose: the editor's page overlay is classed
+   tool-<current tool>, so with the Select tool it is "tool-select" as well, and
+   a bare class rule turned it into a 34px white box across the top of the page. */
+select.tool-select { height: 34px; padding: 0 9px; border: 1px solid var(--line); border-radius: 8px; background: #fff; font-size: 13.5px; color: var(--ink); }
 
 /* merge list */
 .merge-list { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 8px; }
